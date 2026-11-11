@@ -8,6 +8,12 @@ const STEP_ROW = /\bsubmit\s*→?\s*$/i;
 const CUT_STEP_ROW = /^\s*←\s.*[□☐■☑☒]/;
 const REVIEW_TITLE = /^\s*review your answers\s*$/i;
 
+export function promptText(screen) {
+  // A screen's end as prompts are judged on: its lines without the padding a wide terminal puts at their end (or before a box's right border), then its last
+  // 4000 characters, so the padding doesn't push a long prompt's top out.
+  return screen.split("\n").map(l => l.replace(/\s+$/, "").replace(/\s{2,}([┃│])$/, " $1")).join("\n").trim().slice(-4000);
+}
+
 function screenLines(screen) {
   // The screen's lines without hc's notes, trailing space or the frame some harnesses draw around a prompt.
   return screen.replace(/\u00a0/g, " ").split("\n").filter(l => !l.startsWith("[hc]")).map(l => l.replace(/^\s*[┃│] ?/, "").replace(/\s*[┃│]?\s*$/, ""));
@@ -89,10 +95,12 @@ export function sameOption(a, b) {
 }
 
 export function typedAnswer(harness, prompt, index) {
-  // The keys that put the cursor in a text row, ready for a typed answer.
+  // The keys that put the cursor in a text row, ready for a typed answer: the ones its reading gave it (which also clear what the row holds), else the harness's.
+  const option = prompt.options[index];
+  if (option.before) return { before: option.before };
   const { byNumber, notes } = harness?.prompt ?? {};
-  const to = byNumber ? [String(prompt.options[index].n)] : moves(prompt, index);
-  if (prompt.options[index].input === "chat") return { before: [...to, "enter"] };
+  const to = byNumber ? [String(option.n)] : moves(prompt, index);
+  if (option.input === "chat") return { before: [...to, "enter"] };
   return { before: notes ? [...to, "tab"] : to };
 }
 
@@ -214,11 +222,17 @@ const FIELD_MARKS = { "\uF192": [true, false], "◉": [true, false], "(o)": [tru
   "\uF14A": [true, true], "☑": [true, true], "[x]": [true, true], "\uF096": [false, true], "☐": [false, true], "[ ]": [false, true] };
 const FIELD_SUBMIT = /^\s*((?:\uF054|❯|>)\s+)?Submit$/;
 const FIELD_OTHER = /^Other:\s*(.*)$/;
+const FIELD_CURSOR = /^(?:\uF054|❯|>)\s+/;
+const FIELD_VALUE = /^\s+│ ?(.*)$/;
+const FIELD_SELECT = /^‹ (.*) ›\s+(\d+)\/(\d+)$/;
+const CLEAR_LINE = ["ctrl+a", "ctrl+k"];
 
 export function parseFieldForm(shown) {
-  // A form whose fields all show at once (OMP's ask): radio buttons or checkboxes, each field with an "Other:" row typed in place, above a Submit row, with one
-  // cursor (nerd, unicode or ascii symbols). Read as the field the cursor is in, or, with the cursor on Submit, a review of the answers. Its keys: Enter picks a
-  // radio button and moves to the next field (or Submit, which a one-field form then presses too), Space ticks a checkbox, Enter leaves a checkbox field.
+  // A form whose fields all show at once (OMP's ask), above a Submit row, with one cursor (nerd, unicode or ascii symbols). A field is radio buttons or
+  // checkboxes (each with an "Other:" row typed in place), or a value under its label: text, a number, a textarea, or a select stepped through as ‹ value ›.
+  // Read as the field the cursor is in, or, with the cursor on Submit, a review of the answers. Its keys: Enter picks a radio button and moves to the next
+  // field (or Submit, which a one-field form then presses too), Space ticks a checkbox, Enter leaves any other field, ← and → step a select, and text
+  // goes in where the cursor is, after Ctrl+A Ctrl+K clears what was there.
   const lines = screenLines(shown);
   let end = lines.length - 1;
   while (end >= 0 && !lines[end].trim()) end--;
@@ -230,45 +244,69 @@ export function parseFieldForm(shown) {
   let run = [], field = null, submit = false;
   for (const line of lines.slice(top, footer)) {
     if (/^\s*├/.test(line)) continue;
-    const row = FIELD_ROW.exec(line), done = FIELD_SUBMIT.exec(line);
+    const row = FIELD_ROW.exec(line), value = FIELD_VALUE.exec(line), done = FIELD_SUBMIT.exec(line);
     if (row) {
-      if (!field) {
-        field = { label: run.join(" "), rows: [] };
+      if (field?.kind !== "choice") {
+        field = { kind: "choice", label: run.map(r => r.text).join(" "), rows: [] };
         fields.push(field);
         run = [];
       }
       const [checked, box] = FIELD_MARKS[row[3]], other = FIELD_OTHER.exec(row[4].trim());
       field.box = box;
       field.rows.push({ label: row[4].trim(), checked, here: Boolean(row[2]), other: other ? (other[1].trim() === "type your own" ? "" : other[1].trim()) : null });
+    } else if (value) {
+      if (field?.kind !== "value") {
+        const head = run.pop();
+        if (!fields.length) intro.push(...run.map(r => r.text));
+        field = { kind: "value", label: head?.text ?? "", here: Boolean(head?.here), lines: [] };
+        fields.push(field);
+        run = [];
+      }
+      field.lines.push(value[1].trimEnd());
     } else if (done) { submit = Boolean(done[1]); field = null; run = []; }
-    else if (!line.trim()) { if (!field && !fields.length && run.length) { intro.push(...run); run = []; } field = null; }
-    else if (field && /^\s{4,}\S/.test(line)) field.rows.at(-1).label += ` ${line.trim()}`;
-    else { field = null; run.push(line.trim()); }
+    else if (!line.trim()) { if (!field && !fields.length && run.length) { intro.push(...run.map(r => r.text)); run = []; } field = null; }
+    else if (field?.kind === "choice" && /^\s{4,}\S/.test(line)) field.rows.at(-1).label += ` ${line.trim()}`;
+    else { field = null; run.push({ text: line.replace(FIELD_CURSOR, "").trim(), here: FIELD_CURSOR.test(line) }); }
   }
   if (!fields.length) return null;
-  const current = fields.findIndex(f => f.rows.some(r => r.here));
+  for (const f of fields.filter(f => f.kind === "value")) {
+    const select = f.lines.length === 1 ? FIELD_SELECT.exec(f.lines[0].trim()) : null;
+    f.select = select ? { value: select[1], at: Number(select[2]), of: Number(select[3]) } : null;
+    f.text = f.lines.join("\n").trim();
+  }
+  const answerOf = f => f.kind === "choice" ? f.rows.filter(r => r.checked).map(r => r.other ?? r.label).join(", ") : f.select ? f.select.value : f.text;
+  const current = fields.findIndex(f => f.kind === "choice" ? f.rows.some(r => r.here) : f.here);
   const base = { tabs: null, steps: [], review: null, more: false, preview: null };
   if (current < 0) {
     if (!submit) return null;
-    const answers = fields.map(f => ({ question: f.label, answer: f.rows.filter(r => r.checked).map(r => r.other ?? r.label).join(", ") }));
+    const answers = fields.map(f => ({ question: f.label, answer: answerOf(f) }));
     const question = [...intro, "Send these answers?"];
     return { ...base, question, review: { answers, warning: "" }, multi: false, sig: JSON.stringify([question, answers]), options: [
       { n: 1, label: "Send", desc: [], selected: true, keys: ["enter"] },
       { n: 2, label: "Change an answer", desc: [], selected: false, keys: ["up"] },
     ] };
   }
-  const f = fields[current], at = f.rows.findIndex(r => r.here), only = fields.length === 1;
+  const f = fields[current], only = fields.length === 1;
+  const question = [...intro, only ? f.label : `${f.label} (${current + 1} of ${fields.length})`];
+  if (f.kind === "value" && f.select) return { ...base, question, multi: true, sig: JSON.stringify([question, "select"]), options: [
+    { n: 1, label: f.select.value, desc: [`${f.select.at} of ${f.select.of}`], selected: true, keys: ["enter"] },
+    { n: 2, label: "Next choice", desc: [], selected: false, keys: ["right"] },
+    { n: 3, label: "Previous choice", desc: [], selected: false, keys: ["left"] },
+  ] };
+  if (f.kind === "value") return { ...base, question, multi: false, sig: JSON.stringify([question, "text"]), options: [
+    { n: 1, label: f.text || "Type an answer", desc: [], selected: true, input: "text", typed: f.text, before: CLEAR_LINE },
+  ] };
+  const at = f.rows.findIndex(r => r.here);
   const arrows = i => Array(Math.abs(i - at)).fill(i > at ? "down" : "up");
   const options = [];
   f.rows.forEach((r, i) => {
     if (f.box && r.other !== null) return;
     const o = { n: i + 1, label: r.other !== null ? r.other || "Type your own answer" : r.label, desc: [], selected: r.here };
     if (f.box) Object.assign(o, { checked: r.checked, keys: [...arrows(i), "space"] });
-    else if (r.other !== null) Object.assign(o, { input: "text", typed: r.other });
+    else if (r.other !== null) Object.assign(o, { input: "text", typed: r.other, before: [...arrows(i), ...CLEAR_LINE] });
     else o.keys = [...arrows(i), "enter", ...(only ? ["enter"] : [])];
     options.push(o);
   });
   if (f.box) options.push({ n: null, label: "Next", desc: [], selected: false, next: true, keys: ["enter"] });
-  const question = [...intro, only ? f.label : `${f.label} (${current + 1} of ${fields.length})`];
   return { ...base, question, options, multi: Boolean(f.box), sig: JSON.stringify([question, f.box ? "multi" : options.map(o => o.input ? "" : o.label)]) };
 }

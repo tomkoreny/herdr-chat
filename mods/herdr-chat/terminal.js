@@ -1,6 +1,7 @@
 import { hc, exec, appHome, focused, agents, terminals } from "herdr";
 import { onWindows, modFile, base64Utf8 } from "./platform.js";
 import { harnessFor } from "./harnesses/index.js";
+import { promptText } from "./model/prompts.js";
 
 export function target() {
   // The agent the chat shows: the focused tab's agent, the focused one when there are several.
@@ -39,7 +40,7 @@ export async function readScreen(t, lines) {
 export async function readPrompt(t) {
   // The screen's end as prompts are judged on (what the question card and its checks compare).
   const screen = await readScreen(t, 26);
-  return screen == null ? null : screen.trim().slice(-4000);
+  return screen == null ? null : promptText(screen);
 }
 
 export function sendMessage(t, text, force) {
