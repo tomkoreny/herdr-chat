@@ -73,10 +73,12 @@ Colours come from the active theme; icons are the mod's own SVGs in the theme's 
   Claude Code's previews show beside the options. The card folds to one line. Each key is sent
   only while the screen still shows the same question. OMP's ask form, which shows all its fields
   at once, is read a field at a time (`prompt.form: "fields"`): picking a radio button moves to the
-  next field (a one-field form is sent at once), checkboxes tick, a select steps through its values,
-  text, numbers, textareas and "Other" answers are typed in the card (replacing what the field
-  held), and on Submit the card lists the answers to send or change. The screen is judged on its
-  last 4000 characters after the padding at each line's end is dropped. Other prompts show the
+  next field (a one-field form seen whole is sent at once; a tall form is paged, its page in the
+  box's title, and never sent by a pick), checkboxes tick, a select steps through its values, text,
+  numbers, textareas and "Other" answers are typed in the card (replacing what the field held, or
+  clearing it when emptied), a picture shows as a line pointing to the terminal, and on Submit the
+  card lists the answers to send or change. The screen is judged on its last 4000 characters after
+  each line's end padding is dropped and a picture's cells become one word. Other prompts show the
   screen's last lines with key buttons.
 - **Skills and commands:** typing `/` (also `$` on Codex, `@` on OpenCode) opens the agent's
   skills: ↑↓ choose, Enter or Tab insert, Esc closes. OMP lists all its slash commands instead, as

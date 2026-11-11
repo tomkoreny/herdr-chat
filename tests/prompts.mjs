@@ -195,7 +195,7 @@ const plain = screen("omp-q1-down").replace(/\uF054/g, "❯").replace(/\uF192/g,
 const ascii = screen("omp-q1-down").replace(/\uF054/g, ">").replace(/\uF192/g, "(o)").replace(/\uF10C/g, "( )");
 check("OMP: its unicode and ascii symbols read the same", [plain, ascii].every(s => parsePrompt(omp, s)?.sig === oneField.sig && ompKeys(parsePrompt(omp, s), "Cherry").join() === "down,enter,enter"));
 const typing = parsePrompt(omp, screen("omp-q2-next").replace("\uF054 \uF192 Small", "  \uF192 Small").replace("  \uF10C Other: type your own", "\uF054 \uF10C Other: Hu"));
-check("OMP: with the cursor in its own-answer row, what's typed so far shows", JSON.stringify(typing.options.at(-1)) === JSON.stringify({ n: 3, label: "Hu", desc: [], selected: true, input: "text", typed: "Hu", before: ["ctrl+a", "ctrl+k"] }));
+check("OMP: with the cursor in its own-answer row, what's typed so far shows", JSON.stringify(typing.options.at(-1)) === JSON.stringify({ n: 3, label: "Hu", desc: [], selected: true, input: "text", typed: "Hu", before: ["ctrl+a", "ctrl+k"], keys: ["ctrl+a", "ctrl+k", "enter"] }));
 const reedit = ompRead("q4-reedit");
 check("OMP: a typed answer edited again replaces it, and the card shows what it held",
   JSON.stringify([reedit.options.at(-1).typed, typedAnswer(omp, reedit, reedit.options.length - 1).before]) === JSON.stringify(["Huge", ["ctrl+a", "ctrl+k"]]));
@@ -215,5 +215,18 @@ check("a wide terminal's padding doesn't push a long form's top past the 4000 ch
   wide.trim().length > 4000 && parsePrompt(omp, wide.trim().slice(-4000))?.question.at(-1) !== "Name (1 of 4)" && promptText(wide).length <= 4000 && name.question.at(-1) === "Name (1 of 4)");
 const ompWrapped = parsePrompt(omp, ["╭─ Ask ─────", "│ What next?", "│ \uF054 \uF192 Switch the window to the Win98", "│     layout", "│   \uF10C Stay", "│", "│   Submit", "├──────", "│ \uF0311 choose · ↑/↓ move · \uF12B7 cancel", "╰──────"].join("\n"));
 check("OMP: a long choice wraps onto the next line", ompWrapped?.options[0].label === "Switch the window to the Win98 layout");
+const pictured = readFileSync(new URL("fixtures/prompts/omp-picture.txt", import.meta.url), "utf8");
+const picture = parsePrompt(omp, promptText(pictured));
+check("a picture's cells don't fill the characters judged: they read as one word a line", !/\u{10EEEE}/u.test(promptText(pictured)) && promptText(pictured).includes("[picture]"));
+check("OMP: a form with a picture reads whole, the picture as one line saying it's in the terminal",
+  JSON.stringify([picture.question.filter(l => l.startsWith("[A picture")).length, picture.question[1], picture.question.at(-1), picture.options.length]) ===
+  JSON.stringify([1, "[A picture: open the terminal to see it]", "Jak s ikonkami pro spaces?", 4]));
+const paged = parsePrompt(omp, promptText(screen("omp-q1-down").replace("╭─ Ask ", "╭─ Ask · 1/2 ")));
+check("OMP: a paged form's one field isn't sent with it, and the card says which page it is",
+  JSON.stringify([paged.question, ompKeys(paged, "Banana")]) === JSON.stringify([["Page 1 of 2", "Pick a fruit"], ["enter"]]));
+const untitled = parsePrompt(omp, ["│ Pick", "│ \uF054 \uF192 A", "│   \uF10C B", "│", "│   Submit", "├──────", "│ \uF0311 choose · ↑/↓ move", "╰──────"].join("\n"));
+check("OMP: nor is one whose title (and so its paging) is out of view", JSON.stringify([ompKeys(untitled, "A"), ompKeys(untitled, "B")]) === JSON.stringify([["enter"], ["down", "enter"]]));
+check("OMP: an answer emptied in the card is cleared in the field before it moves on",
+  JSON.stringify([keysFor(omp, name, 0), keysFor(omp, reedit, reedit.options.length - 1)]) === JSON.stringify([["ctrl+a", "ctrl+k", "enter"], ["ctrl+a", "ctrl+k", "enter"]]));
 
 process.exit(failed ? 1 : 0);

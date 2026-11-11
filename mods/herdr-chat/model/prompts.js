@@ -9,9 +9,9 @@ const CUT_STEP_ROW = /^\s*←\s.*[□☐■☑☒]/;
 const REVIEW_TITLE = /^\s*review your answers\s*$/i;
 
 export function promptText(screen) {
-  // A screen's end as prompts are judged on: its lines without the padding a wide terminal puts at their end (or before a box's right border), then its last
-  // 4000 characters, so the padding doesn't push a long prompt's top out.
-  return screen.split("\n").map(l => l.replace(/\s+$/, "").replace(/\s{2,}([┃│])$/, " $1")).join("\n").trim().slice(-4000);
+  // A screen's end as prompts are judged on: its lines with a picture's cells (kitty's placeholder characters, several to a cell) as one word, without the
+  // padding a wide terminal puts at their end (or before a box's right border), then its last 4000 characters, so neither pushes a long prompt's top out.
+  return screen.split("\n").map(l => l.replace(/(?:\u{10EEEE}\p{M}*)+/gu, "[picture]").replace(/\s+$/, "").replace(/\s{2,}([┃│])$/, " $1")).join("\n").trim().slice(-4000);
 }
 
 function screenLines(screen) {
@@ -226,13 +226,15 @@ const FIELD_CURSOR = /^(?:\uF054|❯|>)\s+/;
 const FIELD_VALUE = /^\s+│ ?(.*)$/;
 const FIELD_SELECT = /^‹ (.*) ›\s+(\d+)\/(\d+)$/;
 const CLEAR_LINE = ["ctrl+a", "ctrl+k"];
+const PICTURE = "[A picture: open the terminal to see it]";
 
 export function parseFieldForm(shown) {
   // A form whose fields all show at once (OMP's ask), above a Submit row, with one cursor (nerd, unicode or ascii symbols). A field is radio buttons or
   // checkboxes (each with an "Other:" row typed in place), or a value under its label: text, a number, a textarea, or a select stepped through as ‹ value ›.
   // Read as the field the cursor is in, or, with the cursor on Submit, a review of the answers. Its keys: Enter picks a radio button and moves to the next
-  // field (or Submit, which a one-field form then presses too), Space ticks a checkbox, Enter leaves any other field, ← and → step a select, and text
-  // goes in where the cursor is, after Ctrl+A Ctrl+K clears what was there.
+  // field (or Submit, which a form seen whole with one field then presses too: a tall form is paged, its page in the box's title), Space ticks a checkbox,
+  // Enter leaves any other field, ← and → step a select, and text goes in where the cursor is, after Ctrl+A Ctrl+K clears what was there (an emptied
+  // answer is the clear and Enter). A picture shows as a line saying it's in the terminal.
   const lines = screenLines(shown);
   let end = lines.length - 1;
   while (end >= 0 && !lines[end].trim()) end--;
@@ -240,6 +242,7 @@ export function parseFieldForm(shown) {
   if (footer < 0) return null;
   let top = footer;
   while (top > 0 && !/^\s*╭/.test(lines[top - 1])) top--;
+  const title = top > 0 ? lines[top - 1] : "", boxed = /^\s*╭/.test(title), page = /·\s*(\d+)\/(\d+)/.exec(title);
   const fields = [], intro = [];
   let run = [], field = null, submit = false;
   for (const line of lines.slice(top, footer)) {
@@ -266,6 +269,7 @@ export function parseFieldForm(shown) {
     } else if (done) { submit = Boolean(done[1]); field = null; run = []; }
     else if (!line.trim()) { if (!field && !fields.length && run.length) { intro.push(...run.map(r => r.text)); run = []; } field = null; }
     else if (field?.kind === "choice" && /^\s{4,}\S/.test(line)) field.rows.at(-1).label += ` ${line.trim()}`;
+    else if (line.trim() === "[picture]") { field = null; if (run.at(-1)?.text !== PICTURE) run.push({ text: PICTURE, here: false }); }
     else { field = null; run.push({ text: line.replace(FIELD_CURSOR, "").trim(), here: FIELD_CURSOR.test(line) }); }
   }
   if (!fields.length) return null;
@@ -277,24 +281,25 @@ export function parseFieldForm(shown) {
   const answerOf = f => f.kind === "choice" ? f.rows.filter(r => r.checked).map(r => r.other ?? r.label).join(", ") : f.select ? f.select.value : f.text;
   const current = fields.findIndex(f => f.kind === "choice" ? f.rows.some(r => r.here) : f.here);
   const base = { tabs: null, steps: [], review: null, more: false, preview: null };
+  const where = page ? [`Page ${page[1]} of ${page[2]}`] : [];
   if (current < 0) {
     if (!submit) return null;
     const answers = fields.map(f => ({ question: f.label, answer: answerOf(f) }));
-    const question = [...intro, "Send these answers?"];
+    const question = [...intro, ...where, "Send these answers?"];
     return { ...base, question, review: { answers, warning: "" }, multi: false, sig: JSON.stringify([question, answers]), options: [
       { n: 1, label: "Send", desc: [], selected: true, keys: ["enter"] },
       { n: 2, label: "Change an answer", desc: [], selected: false, keys: ["up"] },
     ] };
   }
-  const f = fields[current], only = fields.length === 1;
-  const question = [...intro, only ? f.label : `${f.label} (${current + 1} of ${fields.length})`];
+  const f = fields[current], only = fields.length === 1 && boxed && !page;
+  const question = [...intro, ...where, fields.length === 1 ? f.label : `${f.label} (${current + 1} of ${fields.length})`];
   if (f.kind === "value" && f.select) return { ...base, question, multi: true, sig: JSON.stringify([question, "select"]), options: [
     { n: 1, label: f.select.value, desc: [`${f.select.at} of ${f.select.of}`], selected: true, keys: ["enter"] },
     { n: 2, label: "Next choice", desc: [], selected: false, keys: ["right"] },
     { n: 3, label: "Previous choice", desc: [], selected: false, keys: ["left"] },
   ] };
   if (f.kind === "value") return { ...base, question, multi: false, sig: JSON.stringify([question, "text"]), options: [
-    { n: 1, label: f.text || "Type an answer", desc: [], selected: true, input: "text", typed: f.text, before: CLEAR_LINE },
+    { n: 1, label: f.text || "Type an answer", desc: [], selected: true, input: "text", typed: f.text, before: CLEAR_LINE, keys: [...CLEAR_LINE, "enter"] },
   ] };
   const at = f.rows.findIndex(r => r.here);
   const arrows = i => Array(Math.abs(i - at)).fill(i > at ? "down" : "up");
@@ -303,7 +308,7 @@ export function parseFieldForm(shown) {
     if (f.box && r.other !== null) return;
     const o = { n: i + 1, label: r.other !== null ? r.other || "Type your own answer" : r.label, desc: [], selected: r.here };
     if (f.box) Object.assign(o, { checked: r.checked, keys: [...arrows(i), "space"] });
-    else if (r.other !== null) Object.assign(o, { input: "text", typed: r.other, before: [...arrows(i), ...CLEAR_LINE] });
+    else if (r.other !== null) Object.assign(o, { input: "text", typed: r.other, before: [...arrows(i), ...CLEAR_LINE], keys: [...arrows(i), ...CLEAR_LINE, "enter"] });
     else o.keys = [...arrows(i), "enter", ...(only ? ["enter"] : [])];
     options.push(o);
   });
