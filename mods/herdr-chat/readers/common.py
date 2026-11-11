@@ -25,7 +25,7 @@ MAX_ENTRIES = A.entries
 TAIL = A.tail * 1024 * 1024
 out = []
 entries = []
-state = {"hint": "", "clipped": False, "fresh": True, "next": 0, "waiting": "", "need": "", "chain": None}
+state = {"hint": "", "clipped": False, "fresh": True, "next": 0, "waiting": "", "need": "", "chain": None, "status": None}
 
 def esc(s): return quote(str(s), safe="")
 def emit(line): out.append(line)

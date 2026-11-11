@@ -1,6 +1,6 @@
 import { stage } from "./stage.mjs";
 
-const { skillToken, matchSkills, withSkill, parseSkills } = await stage().load("model/skills.js");
+const { skillToken, matchSkills, withSkill, parseSkills, choiceToken, matchChoices } = await stage().load("model/skills.js");
 const { HARNESSES } = await stage().load("harnesses/index.js");
 let failed = 0;
 const check = (name, got, want) => {
@@ -42,5 +42,14 @@ check("words before it stay", withSkill("first $im", { start: 6 }, "$", "imagege
 const enc = encodeURIComponent;
 check("the reader's lines become skills, odd characters intact",
   parseSkills(`NOTE|x\nS|${enc("a:b")}|${enc("does 50% | more")}|project\nS|c||\n`), [{ name: "a:b", description: "does 50% | more", source: "project" }, { name: "c", description: "", source: "" }]);
+check("a command's choices come with it",
+  parseSkills(`S|switch|${enc("Switch model")}|builtin|${enc(JSON.stringify([{ name: "a/b", window: 5 }]))}\n`), [{ name: "switch", description: "Switch model", source: "builtin", choices: [{ name: "a/b", window: 5 }] }]);
+
+check("a space after a whole command starts its choice", choiceToken("/effort ", "/"), { command: "effort", start: 8, query: "" });
+check("a second word ends it: the rest is the message", choiceToken("/effort high please", "/"), null);
+check("a bare slash names no command", choiceToken("/ x", "/"), null);
+check("text that doesn't start with the command form has none", choiceToken("effort hi", "/"), null);
+check("Pi's /skill: form names what follows it", choiceToken("/skill:x a", "/skill:"), { command: "x", start: 9, query: "a" });
+check("a description matches after names do", matchChoices([{ name: "anthropic/claude-opus-5-5", description: "Claude Opus 5.5 · 1M context" }, { name: "openai-codex/gpt-5.5", description: "GPT-5.5 · 272k context" }], "1m").map(c => c.name), ["anthropic/claude-opus-5-5"]);
 
 process.exit(failed ? 1 : 0);

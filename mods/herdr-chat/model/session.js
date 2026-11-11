@@ -1,8 +1,9 @@
 import { foldActivity, CALL_SOURCE } from "./transcript.js";
+import { mergeStatus } from "./status.js";
 
 export function blankSession(path = "", hint = "") {
   // A session's state before anything is read.
-  return { raw: [], calls: new Map(), offset: 0, leaf: "", path, hint, messages: [], clipped: false, note: "", open: {}, readAt: 0 };
+  return { raw: [], calls: new Map(), offset: 0, leaf: "", path, hint, messages: [], clipped: false, note: "", open: {}, readAt: 0, status: null };
 }
 
 export function parseReader(stdout) {
@@ -24,7 +25,7 @@ export async function parseReaderInSlices(stdout, pause, sliceMs = 15) {
 }
 
 function blankUpdate() {
-  return { path: null, hint: null, note: "", offset: null, leaf: null, reset: false, need: false, added: [] };
+  return { path: null, hint: null, note: "", offset: null, leaf: null, reset: false, need: false, status: null, added: [] };
 }
 
 function parseLine(r, stdout, at) {
@@ -46,6 +47,7 @@ function parseTagged(r, line) {
   else if (tag === "LEAF") r.leaf = decodeURIComponent(rest);
   else if (tag === "RESET") r.reset = true;
   else if (tag === "NEED") r.need = true;
+  else if (tag === "STATUS") r.status = JSON.parse(decodeURIComponent(rest));
   else if (tag === "R") r.added.push({ kind: "reasoning", text: decodeURIComponent(rest) });
   else if (tag === "C") {
     const [id, json] = rest.split("|");
@@ -69,7 +71,8 @@ export function applyRead(s, r) {
   if (r.offset != null) s.offset = r.offset;
   if (r.leaf != null) s.leaf = r.leaf;
   const path = r.path ?? s.path;
-  if (r.reset || path !== s.path) { s.raw = []; s.calls = new Map(); }
+  if (r.reset || path !== s.path) { s.raw = []; s.calls = new Map(); s.status = null; }
+  s.status = mergeStatus(s.status, r.status);
   s.path = path;
   for (const e of r.added) {
     if (e.kind === "call") { s.raw.push(e); if (e.id) s.calls.set(e.id, e.call); }

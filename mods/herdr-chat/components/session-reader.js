@@ -52,10 +52,10 @@ async function runReader(t, at) {
 }
 
 export async function readSkills(t, path) {
-  // The reader's list of an agent's skills, run on the agent's machine.
-  const { user, project, skip } = t.harness.skills;
+  // The reader's list of an agent's skills (or all its commands, where the harness lists them), run on the agent's machine.
+  const { user, project, skip, commands } = t.harness.skills;
   const boot = readerProgram(await readerCode(t.machine));
-  const args = ["--app", t.harness.reader, "--pid", String(t.pid), "--skills", JSON.stringify({ user, project, skip })];
+  const args = ["--app", t.harness.reader, "--pid", String(t.pid), "--skills", JSON.stringify({ user, project, skip, ...(commands ? { commands } : {}) })];
   if (t.cwd) args.push("--cwd", t.cwd);
   if (path) args.push("--known", path);
   return python(["-c", boot, ...args], t.machine ? { on: t.machine } : undefined);

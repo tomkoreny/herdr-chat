@@ -1,4 +1,5 @@
 SKILL_LOGS = {}
+COMMANDS = {}
 SKILLS_MOST = 500
 
 def frontmatter(path):
@@ -69,8 +70,15 @@ def log_lines(path, marker):
     return [l.decode("utf-8", "replace") for chunk in (head, tail) for l in chunk.split(b"\n") if marker in l]
 
 def emit_skills():
-    """Writes the harness's skills: what its own log lists, then its folders' others."""
+    """Writes the harness's skills: what its own log lists, then its folders' others. A harness that lists
+    all its commands (`commands` in its spec, a reader in COMMANDS) gets that list instead, each command
+    with the choices that can follow it."""
     spec = loads(A.skills) or {}
+    if spec.get("commands") and A.app in COMMANDS:
+        for name, desc, source, choices in COMMANDS[A.app](spec):
+            emit("S|" + esc(name) + "|" + esc(short(desc, 240)) + "|" + esc(source) + ("|" + esc(json.dumps(choices, separators=(",", ":"), ensure_ascii=False)) if choices else ""))
+        flush()
+        return
     listed = SKILL_LOGS[A.app](A.known) if A.app in SKILL_LOGS and A.known else []
     scanned = scan_skills(spec)
     sources = {n: s for n, _, s in scanned}

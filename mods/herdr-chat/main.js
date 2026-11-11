@@ -254,7 +254,7 @@ export default class HerdrChat extends View {
       .when(Boolean(measure), el => el.child(measure))
       .child(v_flex().w_full().flex_none().items_center().px(24).pt(12).pb(14).gap(12)
         .when(Boolean(status), el => el.child(status))
-        .child(this.composer.render(t, active)));
+        .child(this.composer.render(t, active, this.reader.session.status)));
   }
 }
 

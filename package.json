@@ -8,6 +8,6 @@
   },
   "scripts": {
     "vendor:pele": "node scripts/vendor-pele.mjs",
-    "test": "node tests/sweep.mjs && node tests/diagrams.mjs && node tests/copy.mjs && node tests/caret.mjs && node tests/retracted.mjs && python3 tests/steering.py && python3 tests/codex-logs.py && python3 tests/opencode.py && python3 tests/images.py && python3 tests/reader_names.py && python3 tests/process-tree.py &&node tests/previews.mjs && python3 tests/skills.py && node tests/skills.mjs && node tests/sessions.mjs && node tests/read-cue.mjs && node tests/fold.mjs && node tests/measure.mjs && node tests/drafts.mjs && node tests/prompts.mjs && node tests/harnesses.mjs && node tests/structure.mjs && python3 tests/step-row.py && node scripts/vendor-pele.mjs --check && python3 tests/prompt-keys.py"
+    "test": "node tests/sweep.mjs && node tests/diagrams.mjs && node tests/copy.mjs && node tests/caret.mjs && node tests/retracted.mjs && python3 tests/steering.py && python3 tests/codex-logs.py && python3 tests/opencode.py && python3 tests/images.py && python3 tests/reader_names.py && python3 tests/process-tree.py &&node tests/previews.mjs && python3 tests/skills.py && node tests/skills.mjs && node tests/sessions.mjs && node tests/read-cue.mjs && node tests/fold.mjs && node tests/measure.mjs && node tests/drafts.mjs && node tests/prompts.mjs && node tests/harnesses.mjs && node tests/structure.mjs && python3 tests/step-row.py && node scripts/vendor-pele.mjs --check && python3 tests/prompt-keys.py && python3 tests/omp.py && node tests/status.mjs && node tests/command-menu.mjs"
   }
 }

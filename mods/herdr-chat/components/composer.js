@@ -11,6 +11,7 @@ import { caretOf, lineMove } from "../model/caret.js";
 import { COLUMN, icon } from "../ui/primitives.js";
 import { SkillMenu } from "./skill-menu.js";
 import { skillToken } from "../model/skills.js";
+import { statusParts } from "../model/status.js";
 
 const DRAFT_PAUSE = 400;
 const SENT_PRUNE_EVERY = 3600000;
@@ -343,8 +344,47 @@ export class Composer {
     });
   }
 
-  render(t, active) {
-    // The reply box: attachments, the text, and the send or stop button.
+  sendCommand(text, cx) {
+    // Runs one of the agent's commands (picked in the status line) in its terminal, leaving the draft alone.
+    const t = target();
+    if (!t || this.host.sending) return;
+    this.host.sending = true;
+    cx.notify();
+    cx.spawn(async cx => {
+      try {
+        const r = await sendMessage(t, text, false);
+        if (r.code !== 0) throw new Error(r.stderr || "Send failed");
+        this.host.list.follow();
+      } catch (e) { this.host.note = `Couldn't run ${text}: ${e}`; }
+      finally { this.host.sending = false; cx.notify(); }
+    });
+  }
+
+  statusLine(t, active, status) {
+    // The line under the box: the agent's model, thinking level, context and cost where its reader tells them (`status`; the model and the level open their choices), then where replies go.
+    const hint = div().w_full().text_center().text_size(11.5).text_color(t.dim);
+    if (!active) return hint.child("");
+    const switches = active.harness.status ?? {};
+    const parts = statusParts(status, this.menu.command(active, switches.model)?.choices);
+    if (!parts) return hint.child(`Sends to the live ${active.label} terminal · drop or paste an image to attach it`);
+    const chip = (id, label, command, current) => {
+      const can = Boolean(command && this.menu.command(active, command)?.choices?.length) && active.status !== "blocked";
+      return h_flex().id(id).flex_none().h(22).px(7).gap(3).items_center().rounded(6).text_color(t.muted)
+        .when(can, el => el.cursor_pointer().hover(s => s.bg(t.raised).text_color(t.foreground))
+          .on_click((_e, cx) => { cx.stop_propagation(); this.menu.pick(active, command, current, cx); }))
+        .child(label)
+        .when(can, el => el.child(icon("chevron-down", 11, t.dim)));
+    };
+    const facts = [parts.context, parts.cost].filter(Boolean).join(" · ");
+    return h_flex().w_full().h(22).gap(2).items_center().text_size(11.5).text_color(t.dim)
+      .when(Boolean(parts.model), el => el.child(chip("status-model", parts.model, switches.model, status.model)))
+      .when(Boolean(parts.effort), el => el.child(chip("status-effort", parts.effort, switches.effort, status.effort)))
+      .when(Boolean(facts), el => el.child(div().flex_none().px(7).child(facts)))
+      .child(div().flex_1().min_w(0).truncate().text_right().child(`Sends to the live ${active.label} terminal · drop or paste images`));
+  }
+
+  render(t, active, status) {
+    // The reply box: attachments, the text, the send or stop button, and the status line under it (`status`, the shown session's).
     const ready = (Boolean(this.input.value().trim()) || this.attachments.length > 0) && !this.host.sending && Boolean(active);
     const stopping = active?.status === "working" && !this.input.value().trim() && !this.attachments.length;
     const menu = this.menu.render(t, active);
@@ -375,7 +415,6 @@ export class Composer {
             .bg(ready ? t.accent : t.raised).text_color(ready ? t.accent_foreground : t.dim)
             .when(ready, el => el.cursor_pointer().hover(s => s.opacity(0.88)).on_click((_e, cx) => this.send(cx)))
             .child(svg(`${ICONS}/arrow-up.svg`).size(16))))
-      .child(div().w_full().text_center().text_size(11.5).text_color(t.dim)
-        .child(active ? `Sends to the live ${active.label} terminal · drop or paste an image to attach it` : ""));
+      .child(this.statusLine(t, active, status));
   }
 }

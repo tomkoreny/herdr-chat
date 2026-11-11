@@ -44,7 +44,8 @@ status bar) with the chat and the terminal sharing the work area.
   - while the agent works, an accent spark and its live status;
   - a question card above the reply box when the agent asks something;
   - a reply box that grows to four lines, with a round send button in the theme's accent (a Stop
-    button while the agent works) and a line naming the terminal it sends to;
+    button while the agent works) and a line under it naming the terminal it sends to, led by the
+    agent's status where its log tells it (OMP: model, thinking level, context, cost);
   - a jump-to-bottom button when the newest message is off screen.
 - **Empty chat:** herdr's logo with "Opening this … conversation…", "Waiting for this …
   conversation to start." or "No messages in this session yet."
@@ -64,16 +65,25 @@ Colours come from the active theme; icons are the mod's own SVGs in the theme's 
   back on Stop returns to the reply box.
 - **Images:** drop png, jpg, gif or webp files on the chat, or paste one with Ctrl+V. Images over
   250 KB are shrunk, placed beside the agent's terminal with `hc put`, and attached the way each
-  agent attaches images: Claude Code as an `@path` mention, Codex as a pasted path, Pi and OpenCode
-  as the plain path. Images in the conversation show as thumbnails, fetched from the agent's
+  agent attaches images: Claude Code as an `@path` mention, Codex as a pasted path, Pi, OpenCode
+  and OMP as the plain path. Images in the conversation show as thumbnails, fetched from the agent's
   machine.
 - **Questions:** when an agent asks a question with choices, the card lists them: ↑↓ move, Enter
   or a click answers, multi-select questions tick rows, multi-step questions step through, and
   Claude Code's previews show beside the options. The card folds to one line. Each key is sent
   only while the screen still shows the same question. Other prompts show the screen's last lines
   with key buttons.
-- **Skills:** typing `/` (also `$` on Codex, `@` on OpenCode) opens the agent's skills: ↑↓ choose,
-  Enter or Tab insert, Esc closes.
+- **Skills and commands:** typing `/` (also `$` on Codex, `@` on OpenCode) opens the agent's
+  skills: ↑↓ choose, Enter or Tab insert, Esc closes. OMP lists all its slash commands instead, as
+  its RPC mode reports them (`omp --mode rpc --no-session`, run for a moment in the terminal's
+  folder), and after a command and a space offers what can follow it: `/effort`'s levels,
+  `/switch`'s models, other commands' subcommands. Without OMP to ask, its skills show as
+  `/skill:` commands.
+- **Status line (OMP):** the session's model, thinking level, how full its context is and what its
+  replies cost, read from its log. Clicking the model or the level lists the choices, the current
+  one selected; picking one sends `/switch <model>` or `/effort <level>` to the terminal and leaves
+  the draft alone. Typing, a second click or Esc closes the list. Not clickable while the agent
+  waits on a question.
 - **One draft:** on Linux and macOS, the reply box and the agent's own input box share one draft,
   images included, as you switch between Chat and Terminal.
 - **Reading:** each session log is found once and remembered. The first read takes its last 24 MB
@@ -98,8 +108,8 @@ the terminal itself belongs to the layout. The same mod runs twice: as the chat
 | `main.js` | the chat view: sessions, timers, header, list, card and composer, Stop |
 | `header.js` | the terminal pane header with the toggle |
 | `common.js` | session keys, each session's view, `layout.select` |
-| `components/` | `chat-list.js` (rows, measuring, following), `question-card.js`, `composer.js` (reply box, drafts, images, sending), `session-reader.js` (reading and keeping conversations), `skill-menu.js` |
-| `model/` | pure data, free of gpui and herdr imports: transcript folding, session state, prompt parsing, caret, hash |
+| `components/` | `chat-list.js` (rows, measuring, following), `question-card.js`, `composer.js` (reply box, drafts, images, sending, status line), `session-reader.js` (reading and keeping conversations), `skill-menu.js` (skills, commands and their choices) |
+| `model/` | pure data, free of gpui and herdr imports: transcript folding, session state, status line, prompt parsing, caret, hash |
 | `ui/` | `primitives.js` (icons, buttons, badges, toggle) and `rows.js` (each conversation row) |
 | `harnesses/` | one adapter per agent: label, image style, drafts, prompt options, input box, skills, reader. All agent-specific behaviour lives here |
 | `readers/` | the session reader in Python 3.6+, one file per agent beside `common.py` and `main.py`, joined in `manifest.json` order |
@@ -116,11 +126,13 @@ the terminal itself belongs to the layout. The same mod runs twice: as the chat
 - runs programs, on this computer and on other machines (`exec(…, { on })`): `python3` (`py -3`
   or `python` on Windows), `hc` (`send`, `keys`, `interrupt`, `put`, `get`, `ls`, `exec`, `read`,
   `attach`, including `attach --observe`), `sh`, `env`, `rm`, `find`, `powershell.exe`, the
-  clipboard tools (`wl-paste`, `xclip`, `pngpaste`) and ImageMagick or `sips`. The reader travels
+  clipboard tools (`wl-paste`, `xclip`, `pngpaste`) and ImageMagick or `sips`, and `omp --mode rpc
+  --no-session` for OMP's commands and models (no session is written). The reader travels
   with each run, so other machines need only Python 3 and `hc`;
 - reads the agents' session logs (`~/.claude`, including `~/.claude/sessions`, `~/.codex/sessions`,
-  `~/.pi/agent/sessions`, OpenCode's database), their skill folders, terminal screens, and the
-  process list, to find which session runs in each terminal;
+  `~/.pi/agent/sessions`, `~/.omp/agent/sessions` and OMP's `~/.omp/agent/terminal-sessions`,
+  OpenCode's database), their skill folders, terminal screens, and the process list, to find which
+  session runs in each terminal;
 - types into terminals and stops a working agent with its own stop key;
 - writes image copies and drawn diagrams under `cache/herdr-chat/` in the Herdr home, and deletes
   its own files there after a day (delete that folder along with the mod to remove everything);
@@ -157,10 +169,15 @@ the terminal itself belongs to the layout. The same mod runs twice: as the chat
 - **Agent logs:** Codex continues a resumed session in its older logs and splits long ones into
   parts, and writes its reviewer's logs beside them (read only the session's own). Claude Code logs
   messages sent mid-turn as `queued_command` attachments. A resumed Pi keeps writing to its first
-  file.
+  file. An OMP log is a tree whose conversation is the branch ending at the newest entry; side
+  records (model usage) name that end in `activeLeafId` without moving it.
 - **Adding an agent:** a `harnesses/<id>.js` adapter listed in `harnesses/index.js`, and a
   `readers/<id>.py` registering `READERS["<id>"]` listed in `readers/manifest.json` before
-  `main.py`. `tests/harnesses.mjs` checks that agent names stay inside `harnesses/`.
+  `main.py`. `tests/harnesses.mjs` checks that agent names stay inside `harnesses/`. A reader can
+  set `state["status"]` (`model`, `effort`, `context`, `cost`) for the status line: the chat keeps
+  the latest of each and adds up each read's `cost`. An agent that can list its commands registers
+  `COMMANDS["<id>"]` and sets `skills.commands`; the adapter's `status` names the commands the
+  status line's model and level run.
 
 **Platform notes:**
 
@@ -183,4 +200,6 @@ the terminal itself belongs to the layout. The same mod runs twice: as the chat
 - A pasted screenshot shows as a thumbnail and reaches the agent as an image.
 - A question with choices shows as a card, and answering it in the chat answers it in the terminal.
 - A mermaid block shows as a diagram in the theme's colours.
+- On OMP, `/` lists its commands, `/effort ` offers its levels, and picking a model in the status
+  line switches the session's model, which the line shows once OMP has logged it.
 - Changing the theme changes the chat's colours.

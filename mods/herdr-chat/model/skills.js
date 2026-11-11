@@ -30,10 +30,32 @@ export function withSkill(text, token, invoke, name) {
   return `${text.slice(0, token.start)}${invoke}${name} `;
 }
 
+export function choiceToken(text, invoke) {
+  // The choice being typed after a command, as in `/effort hi`: the command's name, where the choice starts, and what's typed of it; null otherwise.
+  const m = /^(\S+) (\S*)$/.exec(text);
+  if (!m || !invoke || !m[1].startsWith(invoke) || m[1].length === invoke.length) return null;
+  return { command: m[1].slice(invoke.length), start: m[1].length + 1, query: m[2] };
+}
+
+export function matchChoices(choices, query) {
+  // The choices matching what's typed: name starts first, then names containing it, then descriptions, each kept in the harness's own order (levels low to high, models by provider).
+  const q = query.toLowerCase();
+  const rank = c => {
+    const name = c.name.toLowerCase();
+    return name.startsWith(q) ? 0 : name.includes(q) ? 1 : (c.description ?? "").toLowerCase().includes(q) ? 2 : 3;
+  };
+  return choices.map((c, i) => [rank(c), i, c]).filter(([r]) => r < 3).sort((a, b) => a[0] - b[0] || a[1] - b[1]).map(([, , c]) => c);
+}
+
+export function withChoice(text, token, name) {
+  // The text with the typed choice replaced by `name`, ready to send.
+  return `${text.slice(0, token.start)}${name} `;
+}
+
 export function parseSkills(stdout) {
-  // The reader's S lines as skills.
+  // The reader's S lines as skills, or commands with the choices that can follow them.
   return stdout.split("\n").filter(l => l.startsWith("S|")).map(l => {
-    const [, name, description = "", source = ""] = l.split("|").map(decodeURIComponent);
-    return { name, description, source };
+    const [, name, description = "", source = "", choices] = l.split("|").map(decodeURIComponent);
+    return choices ? { name, description, source, choices: JSON.parse(choices) } : { name, description, source };
   });
 }

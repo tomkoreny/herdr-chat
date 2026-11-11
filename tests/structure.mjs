@@ -15,7 +15,7 @@ const HOST = {
   "components/question-card.js": ["sending", "note", "key", "list.following", "list.follow"],
   "components/composer.js": ["sending", "note", "key", "list.following", "list.follow", "card.choices", "card.stillCurrent", "stop", "stopping"],
   "components/session-reader.js": ["card.read", "list.following", "list.follow"],
-  "components/skill-menu.js": ["input", "keepDraft"],
+  "components/skill-menu.js": ["input", "keepDraft", "sendCommand"],
 };
 for (const [file, allowed] of Object.entries(HOST)) {
   const used = [...new Set([...read(file).matchAll(/this\.host\.(\w+)(?:\.(\w+))?/g)].map(m => {

@@ -16,7 +16,8 @@ const SHAPE = {
   mirror: v => typeof v === "boolean",
   prompt: v => v && typeof v === "object" && Object.keys(v).every(k => ["columns", "notes", "byNumber"].includes(k)),
   box: (v, h) => v === null ? h.mirror === false : Boolean(v && (v.style === "rules" || (v.style === "mark" && typeof v.mark === "string" && v.mark.length > 0))),
-  skills: v => Boolean(v && Array.isArray(v.triggers) && v.triggers.length && typeof v.invoke === "string" && v.triggers.includes(v.invoke[0]) && Array.isArray(v.user) && Array.isArray(v.project) && Array.isArray(v.skip) && Object.keys(v).every(k => ["triggers", "invoke", "user", "project", "skip", "enterTwice"].includes(k))),
+  skills: v => Boolean(v && Array.isArray(v.triggers) && v.triggers.length && typeof v.invoke === "string" && v.triggers.includes(v.invoke[0]) && Array.isArray(v.user) && Array.isArray(v.project) && Array.isArray(v.skip) && (v.commands === undefined || v.commands === true) && Object.keys(v).every(k => ["triggers", "invoke", "user", "project", "skip", "enterTwice", "commands"].includes(k))),
+  status: v => v === undefined || Boolean(v && typeof v === "object" && Object.keys(v).length && Object.entries(v).every(([k, c]) => ["model", "effort"].includes(k) && typeof c === "string" && c.length > 0)),
   reader: v => typeof v === "string" && v.length > 0,
 };
 for (const [app, h] of Object.entries(HARNESSES)) {
@@ -25,7 +26,7 @@ for (const [app, h] of Object.entries(HARNESSES)) {
   check(`${app}: has no fields beyond the adapter shape`, Object.keys(h).filter(k => !(k in SHAPE)), []);
 }
 check("an unsupported app has no adapter", harnessFor("nope"), null);
-check("the supported names read as one phrase", supportedNames(), "Claude Code, Codex, Pi or OpenCode");
+check("the supported names read as one phrase", supportedNames(), "Claude Code, Codex, Pi, OpenCode or omp");
 
 const paste = { images: "paste" }, mention = { images: "mention" }, path = { images: "path" };
 check("a pasting harness gets the paths pasted ahead of the text", draftPastes(paste, ["/a.png"], "hi"), { pastes: ["/a.png", "hi"], pasted: "hi" });
