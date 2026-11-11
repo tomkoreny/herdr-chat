@@ -113,18 +113,31 @@ def parse_omp(path):
         omp_status(o)
         if o.get("type") == "message": omp_entry(o)
 
+def omp_context(usage):
+    """The tokens a reply's context held, counted as OMP counts them (calculateContextTokens): the
+    provider's own context count where it gives one, else every token less the provider's orchestration."""
+    if usage.get("contextTokens") is not None: return max(0, int(usage["contextTokens"]))
+    side = usage.get("orchestration") or {}
+    every = int(usage.get("totalTokens") or 0) or sum(int(usage.get(k) or 0) for k in ("input", "output", "cacheRead", "cacheWrite"))
+    return max(0, every - sum(int(side.get(k) or 0) for k in ("input", "output", "cacheRead")))
+
 def omp_status(o):
-    """What an entry tells about the session, into state["status"]: the model (`provider/id`), the thinking
-    level, the tokens the latest reply's context held, and what the replies read here cost. The cost is
-    of this read's entries only: the chat adds it to what earlier reads found."""
-    m, seen = o.get("message") or {}, {}
-    if o.get("type") == "model_change" and o.get("model"): seen["model"] = str(o["model"])
-    elif o.get("type") == "thinking_level_change" and o.get("thinkingLevel"): seen["effort"] = str(o["thinkingLevel"])
-    elif o.get("type") == "message" and m.get("role") == "assistant":
+    """What an entry tells about the session, into state["status"], as OMP rebuilds it: the model of the
+    default role (`model`; until one is logged, the latest reply's as `inferredModel`), the thinking level
+    chosen (`effort`, such as auto) and the one in force (`level`), the tokens the context held after the
+    latest reply or compaction (`context`, None when unknown), and what the replies read here cost (`cost`,
+    which the chat adds to what earlier reads found)."""
+    m, kind, seen = o.get("message") or {}, o.get("type"), {}
+    if kind == "model_change" and o.get("model") and (o.get("role") or "default") == "default": seen["model"] = str(o["model"])
+    elif kind == "thinking_level_change":
+        seen["level"] = str(o.get("thinkingLevel") or "off")
+        seen["effort"] = str(o.get("configured") or seen["level"])
+    elif kind == "compaction": seen["context"] = int(o["tokensAfter"]) if o.get("tokensAfter") else None
+    elif kind == "message" and m.get("role") == "assistant":
         usage = m.get("usage") or {}
-        if m.get("provider") and m.get("model"): seen["model"] = "%s/%s" % (m["provider"], m["model"])
-        read = (m.get("contextSnapshot") or {}).get("promptTokens") or sum(int(usage.get(k) or 0) for k in ("input", "cacheRead", "cacheWrite"))
-        if read: seen["context"] = int(read) + int(usage.get("output") or 0)
+        if m.get("provider") and m.get("model"): seen["inferredModel"] = "%s/%s" % (m["provider"], m["model"])
+        used = omp_context(usage) if m.get("stopReason") not in ("aborted", "error") else 0
+        if used: seen["context"] = used
         cost = float((usage.get("cost") or {}).get("total") or 0)
         if cost: seen["cost"] = (state["status"] or {}).get("cost", 0) + cost
     if seen: state["status"] = dict(state["status"] or {}, **seen)
@@ -151,9 +164,11 @@ def tokens_short(n):
 def omp_commands(spec):
     """OMP's slash commands as it lists them, each with the choices that can follow it: its subcommands,
     or for /switch the models OMP can use (with their context windows, which the status line reads).
-    When OMP can't be asked, the skills in its folders, as the /skill: commands they are."""
+    When OMP can't be asked, the skills in its folders, as the /skill: commands they are, with a note saying so."""
     listed, models = omp_rpc({"type": "get_available_commands"}, {"type": "get_available_models"})
-    if not listed: return [("skill:" + n, d, s, []) for n, d, s in scan_skills(spec)]
+    if not listed:
+        emit("NOTE|" + esc("OMP didn't list its commands here, so only its skills are offered"))
+        return [("skill:" + n, d, s, []) for n, d, s in scan_skills(spec)]
     usable = [{"name": "%s/%s" % (m["provider"], m["id"]), "title": str(m.get("name") or m["id"]), "window": int(m.get("contextWindow") or 0),
                "description": "%s · %s context" % (m.get("name") or m["id"], tokens_short(m.get("contextWindow"))) if m.get("contextWindow") else str(m.get("name") or m["id"])}
               for m in (models or {}).get("models") or [] if m.get("provider") and m.get("id")]

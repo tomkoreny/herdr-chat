@@ -59,3 +59,9 @@ export function parseSkills(stdout) {
     return choices ? { name, description, source, choices: JSON.parse(choices) } : { name, description, source };
   });
 }
+
+export function menuNote(stdout) {
+  // The reader's note about a list of skills or commands (such as the agent being unable to list its commands), or "".
+  const line = stdout.split("\n").find(l => l.startsWith("NOTE|"));
+  return line ? decodeURIComponent(line.slice(5)) : "";
+}

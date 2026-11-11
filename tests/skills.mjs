@@ -1,6 +1,6 @@
 import { stage } from "./stage.mjs";
 
-const { skillToken, matchSkills, withSkill, parseSkills, choiceToken, matchChoices } = await stage().load("model/skills.js");
+const { skillToken, matchSkills, withSkill, parseSkills, menuNote, choiceToken, matchChoices } = await stage().load("model/skills.js");
 const { HARNESSES } = await stage().load("harnesses/index.js");
 let failed = 0;
 const check = (name, got, want) => {
@@ -44,6 +44,7 @@ check("the reader's lines become skills, odd characters intact",
   parseSkills(`NOTE|x\nS|${enc("a:b")}|${enc("does 50% | more")}|project\nS|c||\n`), [{ name: "a:b", description: "does 50% | more", source: "project" }, { name: "c", description: "", source: "" }]);
 check("a command's choices come with it",
   parseSkills(`S|switch|${enc("Switch model")}|builtin|${enc(JSON.stringify([{ name: "a/b", window: 5 }]))}\n`), [{ name: "switch", description: "Switch model", source: "builtin", choices: [{ name: "a/b", window: 5 }] }]);
+check("the reader's note about the list comes through", [menuNote(`NOTE|${enc("only skills | here")}\nS|a||\n`), menuNote("S|a||\n")], ["only skills | here", ""]);
 
 check("a space after a whole command starts its choice", choiceToken("/effort ", "/"), { command: "effort", start: 8, query: "" });
 check("a second word ends it: the rest is the message", choiceToken("/effort high please", "/"), null);

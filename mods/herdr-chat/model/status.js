@@ -7,14 +7,18 @@ export function tokensShort(n) {
 }
 
 export function statusParts(status, models = []) {
-  // A session's status line as text: its model by name, its thinking level, how full its context is, and what it cost so far. The harness's list of models names the model and gives its context window; without it, the model's id and the token count stand in. Null without a status.
+  // A session's status line as text: its model by name, its thinking level (the one chosen, and the one in force when they differ, as in "auto (high)"), how full its context is, and what it cost so far; with the ids its choices go by. The harness's list of models names the model and gives its context window; without it, the model's id and the token count stand in. Null without a status.
   if (!status) return null;
-  const model = models.find(m => m.name === status.model);
+  const modelId = status.model || status.inferredModel || "";
+  const model = models.find(m => m.name === modelId);
   const window = model?.window || 0;
   const used = Number(status.context) || 0;
+  const effort = status.effort || "";
   return {
-    model: model?.title || (status.model ? status.model.split("/").pop() : ""),
-    effort: status.effort || "",
+    model: model?.title || (modelId ? modelId.split("/").pop() : ""),
+    modelId,
+    effort: effort && status.level && status.level !== effort ? `${effort} (${status.level})` : effort,
+    effortId: effort,
     context: !used ? "" : window ? `${(used / window * 100).toFixed(1)}% of ${tokensShort(window)}` : `${tokensShort(used)} tokens`,
     cost: status.cost ? `$${Number(status.cost).toFixed(2)}` : "",
   };

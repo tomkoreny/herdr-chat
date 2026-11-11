@@ -29,6 +29,7 @@ export class Composer {
         const v = this.input.value(), s = v.replace(/\r?\n$/, "");
         if (s !== v) this.input.set_value(s);
       }
+      this.menu.edited(cx);
       this.keepDraft(cx);
       cx.notify();
     });
@@ -345,9 +346,10 @@ export class Composer {
   }
 
   sendCommand(text, cx) {
-    // Runs one of the agent's commands (picked in the status line) in its terminal, leaving the draft alone.
+    // Runs one of the agent's commands (picked in the status line) in its terminal, leaving the draft alone. Never while the agent waits on a question: the keys would answer it.
     const t = target();
     if (!t || this.host.sending) return;
+    if (t.status === "blocked") { this.host.note = `${t.label} is waiting on a question: answer it before running ${text}`; cx.notify(); return; }
     this.host.sending = true;
     cx.notify();
     cx.spawn(async cx => {
@@ -377,8 +379,8 @@ export class Composer {
     };
     const facts = [parts.context, parts.cost].filter(Boolean).join(" · ");
     return h_flex().w_full().h(22).gap(2).items_center().text_size(11.5).text_color(t.dim)
-      .when(Boolean(parts.model), el => el.child(chip("status-model", parts.model, switches.model, status.model)))
-      .when(Boolean(parts.effort), el => el.child(chip("status-effort", parts.effort, switches.effort, status.effort)))
+      .when(Boolean(parts.model), el => el.child(chip("status-model", parts.model, switches.model, parts.modelId)))
+      .when(Boolean(parts.effort), el => el.child(chip("status-effort", parts.effort, switches.effort, parts.effortId)))
       .when(Boolean(facts), el => el.child(div().flex_none().px(7).child(facts)))
       .child(div().flex_1().min_w(0).truncate().text_right().child(`Sends to the live ${active.label} terminal · drop or paste images`));
   }

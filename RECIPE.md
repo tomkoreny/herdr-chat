@@ -174,10 +174,12 @@ the terminal itself belongs to the layout. The same mod runs twice: as the chat
 - **Adding an agent:** a `harnesses/<id>.js` adapter listed in `harnesses/index.js`, and a
   `readers/<id>.py` registering `READERS["<id>"]` listed in `readers/manifest.json` before
   `main.py`. `tests/harnesses.mjs` checks that agent names stay inside `harnesses/`. A reader can
-  set `state["status"]` (`model`, `effort`, `context`, `cost`) for the status line: the chat keeps
-  the latest of each and adds up each read's `cost`. An agent that can list its commands registers
-  `COMMANDS["<id>"]` and sets `skills.commands`; the adapter's `status` names the commands the
-  status line's model and level run.
+  set `state["status"]` for the status line: `model` (or `inferredModel` until one is logged),
+  `effort` with the `level` in force, `context` (None when unknown) and `cost`. The chat keeps the
+  latest of each and adds up each read's `cost`. OMP's reader follows OMP's own rules: the default
+  role's model, the context as `calculateContextTokens` counts it, reset by a compaction. An agent
+  that can list its commands registers `COMMANDS["<id>"]` and sets `skills.commands`; the adapter's
+  `status` names the commands the status line's model and level run.
 
 **Platform notes:**
 

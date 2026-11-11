@@ -1,7 +1,7 @@
 import { div } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { sessionOf } from "../common.js";
-import { skillToken, matchSkills, withSkill, parseSkills, choiceToken, matchChoices, withChoice } from "../model/skills.js";
+import { skillToken, matchSkills, withSkill, parseSkills, menuNote, choiceToken, matchChoices, withChoice } from "../model/skills.js";
 import { readSkills } from "./session-reader.js";
 import { mono } from "../ui/primitives.js";
 
@@ -26,7 +26,7 @@ export class SkillMenu {
     this.lists.set(key, entry);
     cx.spawn(async cx => {
       const r = await readSkills(t, path).catch(() => null);
-      if (r?.code === 0) entry.items = parseSkills(r.stdout);
+      if (r?.code === 0) { entry.items = parseSkills(r.stdout); entry.note = menuNote(r.stdout); }
       entry.at = Date.now(); entry.loading = false;
       cx.notify();
     });
@@ -53,18 +53,27 @@ export class SkillMenu {
     cx.notify();
   }
 
+  edited(cx) {
+    // The draft changed: a pick from the status line closes for good, so Enter sends the draft, even once an undo brings the old text back.
+    if (!this.picking) return;
+    this.picking = null;
+    cx.notify();
+  }
+
   view(t) {
     // What the menu shows now: the skills or commands matching what's typed, the choices for a command, or a command picked from the status line; null when it's closed.
     const skills = t?.harness.skills;
     if (!skills) return null;
-    const text = this.host.input.value(), p = this.picking;
-    if (p && p.session === sessionOf(t) && p.text === text) {
+    const text = this.host.input.value();
+    if (this.picking && (this.picking.session !== sessionOf(t) || this.picking.text !== text || t.status === "blocked")) this.picking = null;
+    const p = this.picking;
+    if (p) {
       const c = this.command(t, p.command);
       if (c?.choices?.length) return this.shown({ kind: "pick", command: c.name, current: p.current, items: c.choices, invoke: skills.invoke }, `pick:${c.name}`);
     }
     if (text === this.dismissed) return null;
     const token = skillToken(text, skills.triggers);
-    if (token) return this.shown({ kind: "skills", token, items: matchSkills(this.list(t), token.query, skills.invoke), invoke: skills.invoke, noun: skills.commands ? "command" : "skill" }, token.query);
+    if (token) return this.shown({ kind: "skills", token, items: matchSkills(this.list(t), token.query, skills.invoke), invoke: skills.invoke, noun: skills.commands ? "command" : "skill", note: this.lists.get(sessionOf(t))?.note ?? "" }, token.query);
     const typed = choiceToken(text, skills.invoke);
     const c = typed && this.command(t, typed.command);
     if (!c?.choices?.length || c.choices.some(x => x.name === typed.query)) return null;
@@ -139,9 +148,9 @@ export class SkillMenu {
 }
 
 function menuFooter(v) {
-  // The line under the menu: how many there are, and the keys.
+  // The line under the menu: how many there are (after the reader's note, when the list is short of what the agent offers), and the keys.
   const n = v.items.length;
   if (v.kind === "pick") return `${v.invoke}${v.command} · ↑↓ to choose · Enter to run it · Esc to close`;
   if (v.kind === "choices") return `${n} choice${n === 1 ? "" : "s"} for ${v.invoke}${v.command} · ↑↓ to choose · Enter or Tab to insert · Esc to close`;
-  return `${n} ${v.noun}${n === 1 ? "" : "s"} · ↑↓ to choose · Enter or Tab to insert · Esc to close`;
+  return `${v.note ? `${v.note} · ` : ""}${n} ${v.noun}${n === 1 ? "" : "s"} · ↑↓ to choose · Enter or Tab to insert · Esc to close`;
 }
