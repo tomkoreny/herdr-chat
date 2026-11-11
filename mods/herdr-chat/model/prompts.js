@@ -234,7 +234,8 @@ export function parseFieldForm(shown) {
   // Read as the field the cursor is in, or, with the cursor on Submit, a review of the answers. Its keys: Enter picks a radio button and moves to the next
   // field (or Submit, which a form seen whole with one field then presses too: a tall form is paged, its page in the box's title), Space ticks a checkbox,
   // Enter leaves any other field, ← and → step a select, and text goes in where the cursor is, after Ctrl+A Ctrl+K clears what was there (an emptied
-  // answer is the clear and Enter). A picture shows as a line saying it's in the terminal.
+  // answer is the clear and Enter). Those clear one line, so a textarea that holds text is kept or changed in the terminal. A picture shows as a line
+  // saying it's in the terminal.
   const lines = screenLines(shown);
   let end = lines.length - 1;
   while (end >= 0 && !lines[end].trim()) end--;
@@ -298,6 +299,10 @@ export function parseFieldForm(shown) {
     { n: 2, label: "Next choice", desc: [], selected: false, keys: ["right"] },
     { n: 3, label: "Previous choice", desc: [], selected: false, keys: ["left"] },
   ] };
+  if (f.kind === "value" && f.lines.length > 1 && f.text) return { ...base, question: [...question.slice(0, -1), ...f.text.split("\n"), question.at(-1)], multi: false,
+    sig: JSON.stringify([question, "area"]), options: [
+      { n: 1, label: "Keep it as it is", desc: ["To change it, open the terminal: the card can't replace several lines"], selected: true, keys: ["enter"] },
+    ] };
   if (f.kind === "value") return { ...base, question, multi: false, sig: JSON.stringify([question, "text"]), options: [
     { n: 1, label: f.text || "Type an answer", desc: [], selected: true, input: "text", typed: f.text, before: CLEAR_LINE, keys: [...CLEAR_LINE, "enter"] },
   ] };

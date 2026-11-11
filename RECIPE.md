@@ -75,8 +75,9 @@ Colours come from the active theme; icons are the mod's own SVGs in the theme's 
   at once, is read a field at a time (`prompt.form: "fields"`): picking a radio button moves to the
   next field (a one-field form seen whole is sent at once; a tall form is paged, its page in the
   box's title, and never sent by a pick), checkboxes tick, a select steps through its values, text,
-  numbers, textareas and "Other" answers are typed in the card (replacing what the field held, or
-  clearing it when emptied), a picture shows as a line pointing to the terminal, and on Submit the
+  numbers, empty textareas and "Other" answers are typed in the card (replacing what the field held,
+  or clearing it when emptied; a textarea holding text is kept from the card and changed in the
+  terminal, as clearing reaches one line), a picture shows as a line pointing to the terminal, and on Submit the
   card lists the answers to send or change. The screen is judged on its last 4000 characters after
   each line's end padding is dropped and a picture's cells become one word. Other prompts show the
   screen's last lines with key buttons.

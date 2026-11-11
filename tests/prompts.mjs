@@ -228,5 +228,10 @@ const untitled = parsePrompt(omp, ["│ Pick", "│ \uF054 \uF192 A", "│   \uF
 check("OMP: nor is one whose title (and so its paging) is out of view", JSON.stringify([ompKeys(untitled, "A"), ompKeys(untitled, "B")]) === JSON.stringify([["enter"], ["down", "enter"]]));
 check("OMP: an answer emptied in the card is cleared in the field before it moves on",
   JSON.stringify([keysFor(omp, name, 0), keysFor(omp, reedit, reedit.options.length - 1)]) === JSON.stringify([["ctrl+a", "ctrl+k", "enter"], ["ctrl+a", "ctrl+k", "enter"]]));
+const area = rows => parsePrompt(omp, ["╭─ Ask ──────", "│ \uF054 Notes │", ...rows.map(r => `│   │ ${r} │`), "│ │", "│   Submit │", "├──────", "│ \uF0311 next · ↑/↓ move │", "╰──────"].join("\n"));
+const filled = area(["line one", "line two", ""]);
+check("OMP: a textarea that holds text shows it and is only kept from the card, since a typed answer can't replace several lines",
+  JSON.stringify([filled.question, filled.options.map(o => [o.label, o.input ?? null, keysFor(omp, filled, 0)])]) === JSON.stringify([["line one", "line two", "Notes"], [["Keep it as it is", null, ["enter"]]]]));
+check("OMP: an empty textarea is typed into from the card", area(["", "", ""]).options[0].input === "text");
 
 process.exit(failed ? 1 : 0);
