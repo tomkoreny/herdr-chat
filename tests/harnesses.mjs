@@ -14,7 +14,7 @@ const SHAPE = {
   label: v => typeof v === "string" && v.length > 0,
   images: v => ["mention", "paste", "path"].includes(v),
   mirror: v => typeof v === "boolean",
-  prompt: v => v && typeof v === "object" && Object.keys(v).every(k => ["columns", "notes", "byNumber"].includes(k)),
+  prompt: v => v && typeof v === "object" && Object.keys(v).every(k => ["columns", "notes", "byNumber", "form"].includes(k)) && (v.form === undefined || v.form === "fields"),
   box: (v, h) => v === null ? h.mirror === false : Boolean(v && (v.style === "rules" || (v.style === "mark" && typeof v.mark === "string" && v.mark.length > 0))),
   skills: v => Boolean(v && Array.isArray(v.triggers) && v.triggers.length && typeof v.invoke === "string" && v.triggers.includes(v.invoke[0]) && Array.isArray(v.user) && Array.isArray(v.project) && Array.isArray(v.skip) && (v.commands === undefined || v.commands === true) && Object.keys(v).every(k => ["triggers", "invoke", "user", "project", "skip", "enterTwice", "commands"].includes(k))),
   status: v => v === undefined || Boolean(v && typeof v === "object" && Object.keys(v).length && Object.entries(v).every(([k, c]) => ["model", "effort"].includes(k) && typeof c === "string" && c.length > 0)),

@@ -71,8 +71,11 @@ Colours come from the active theme; icons are the mod's own SVGs in the theme's 
 - **Questions:** when an agent asks a question with choices, the card lists them: ↑↓ move, Enter
   or a click answers, multi-select questions tick rows, multi-step questions step through, and
   Claude Code's previews show beside the options. The card folds to one line. Each key is sent
-  only while the screen still shows the same question. Other prompts show the screen's last lines
-  with key buttons.
+  only while the screen still shows the same question. OMP's ask form, which shows all its fields
+  at once, is read a field at a time (`prompt.form: "fields"`): picking a radio button moves to the
+  next field (a one-field form is sent at once), checkboxes tick, an "Other" answer is typed in the
+  card, and on Submit the card lists the answers to send or change. Other prompts show the
+  screen's last lines with key buttons.
 - **Skills and commands:** typing `/` (also `$` on Codex, `@` on OpenCode) opens the agent's
   skills: ↑↓ choose, Enter or Tab insert, Esc closes. OMP lists all its slash commands instead, as
   its RPC mode reports them (`omp --mode rpc --no-session`, run for a moment in the terminal's
