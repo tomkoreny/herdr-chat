@@ -226,7 +226,8 @@ def omp_agents(path):
     try: names = sorted(n for n in os.listdir(folder) if n.endswith(".jsonl") and not n.startswith("__"))
     except OSError: return None
     started = omp_started() if names else None
-    since = started if started is not None else time.time() - 3600
+    # ps tells the start only to the second, so both checks allow a few seconds before it.
+    since = started - 5 if started is not None else time.time() - 3600
     agents = []
     for n in names:
         fp = os.path.join(folder, n)
@@ -234,7 +235,7 @@ def omp_agents(path):
             if os.path.getmtime(fp) < since: continue
             a = omp_agent(fp, n[:-len(".jsonl")])
         except OSError: continue
-        if a and (started is None or a["started"] >= (started - 5) * 1000): agents.append(a)
+        if a and (started is None or a["started"] >= since * 1000): agents.append(a)
     return sorted(agents, key=lambda a: a["started"])
 
 def omp_agent(fp, name):
