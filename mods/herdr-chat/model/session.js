@@ -3,7 +3,7 @@ import { mergeStatus } from "./status.js";
 
 export function blankSession(path = "", hint = "") {
   // A session's state before anything is read.
-  return { raw: [], calls: new Map(), offset: 0, leaf: "", path, hint, messages: [], clipped: false, note: "", open: {}, readAt: 0, status: null };
+  return { raw: [], calls: new Map(), offset: 0, leaf: "", path, hint, messages: [], clipped: false, note: "", open: {}, readAt: 0, status: null, live: null };
 }
 
 export function parseReader(stdout) {

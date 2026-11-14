@@ -15,6 +15,10 @@ as it was, one `ctrl-shift-l` away.
 
 Each machine with agents needs Python 3: `python3`, or `py -3` / `python` on Windows.
 
+For OMP's live activity under the working spark, copy `omp/herdr-chat-live.ts` into
+`~/.omp/agent/extensions/` on each machine that runs OMP. OMP loads it when it starts, so sessions
+already running show it once restarted. Without it the chat works as before.
+
 **To add the chat to your own layout**, wrap its `{ "tab": "active" }` block in this stack and give
 its pane look the mod as a header. The mod looks for these names:
 
@@ -41,7 +45,10 @@ status bar) with the chat and the terminal sharing the work area.
   - tools and thinking folded into one grey line per run ("Ran 3 commands, read 2 files ›"),
     opening to each step with its output;
   - mermaid blocks drawn as diagrams in the reply;
-  - while the agent works, an accent spark and its live status;
+  - while the agent works, an accent spark and its live status; on OMP with its extension (see
+    Install), what it is doing right now under it: "Thinking…" with the end of the thought,
+    "Writing…" with the end of the reply, or the tool and its intent with the last lines of its
+    output, in a box of fixed height whose newest lines stay at the bottom;
   - OMP's to-do list and subagents in a card above the reply box, as OMP's TUI shows them above its
     prompt: the tasks closed of all with a bar, the active phase (Roman-numbered) with its tasks
     (ticked, turning while in progress, crossed out when abandoned) and the phases after it with
@@ -124,8 +131,8 @@ the terminal itself belongs to the layout. The same mod runs twice: as the chat
 | `header.js` | the terminal pane header with the toggle |
 | `common.js` | session keys, each session's view, `layout.select` |
 | `components/` | `chat-list.js` (rows, measuring, following), `question-card.js`, `composer.js` (reply box, drafts, images, sending, status line), `session-reader.js` (reading and keeping conversations), `skill-menu.js` (skills, commands and their choices) |
-| `model/` | pure data, free of gpui and herdr imports: transcript folding, session state, status line, the to-do list and subagents card, prompt parsing, caret, hash |
-| `ui/` | `primitives.js` (icons, buttons, badges, toggle), `rows.js` (each conversation row) and `hud.js` (the to-do list and subagents card) |
+| `model/` | pure data, free of gpui and herdr imports: transcript folding, session state, status line, the to-do list and subagents card, the live activity, prompt parsing, caret, hash |
+| `ui/` | `primitives.js` (icons, buttons, badges, toggle), `rows.js` (each conversation row), `hud.js` (the to-do list and subagents card) and `live.js` (the live activity under the working spark) |
 | `harnesses/` | one adapter per agent: label, image style, drafts, prompt options, input box, skills, reader. All agent-specific behaviour lives here |
 | `readers/` | the session reader in Python 3.6+, one file per agent beside `common.py` and `main.py`, joined in `manifest.json` order |
 | `terminal.js`, `platform.js` | the target agent and its screen; Windows and Unix differences |
@@ -133,6 +140,9 @@ the terminal itself belongs to the layout. The same mod runs twice: as the chat
 | `input-box.py`, `send.ps1` | the agent's own input box through `hc attach` (Linux and macOS); sending on Windows |
 | `diagrams.js`, `vendor/pele/` | mermaid through [Pele](https://github.com/obsidianmd/pele), pinned in `package.json` and copied into `vendor/` |
 | `icons/` | the mod's SVG icons |
+
+**OMP extension** `omp/herdr-chat-live.ts`, outside the mod: run by OMP itself, it keeps what the
+agent is doing right now in `<session>/__live.json` beside its log (see Adding an agent).
 
 ## Watch out
 
@@ -146,8 +156,11 @@ the terminal itself belongs to the layout. The same mod runs twice: as the chat
   with each run, so other machines need only Python 3 and `hc`;
 - reads the agents' session logs (`~/.claude`, including `~/.claude/sessions`, `~/.codex/sessions`,
   `~/.pi/agent/sessions`, `~/.omp/agent/sessions` and OMP's `~/.omp/agent/terminal-sessions`,
-  OpenCode's database), their skill folders, terminal screens, and the process list, to find which
-  session runs in each terminal;
+  OpenCode's database), OMP's live file beside its log, their skill folders, terminal screens, and
+  the process list, to find which session runs in each terminal;
+- its OMP extension, where installed, writes only `<session>/__live.json` beside each OMP session's
+  log (thinking and tool output included, readable by the user alone) and removes it when OMP
+  closes the session;
 - types into terminals and stops a working agent with its own stop key;
 - writes image copies and drawn diagrams under `cache/herdr-chat/` in the Herdr home, and deletes
   its own files there after a day (delete that folder along with the mod to remove everything);
@@ -201,7 +214,11 @@ the terminal itself belongs to the layout. The same mod runs twice: as the chat
   open was cut off. An agent on another machine waiting on its subagents is read
   every 1.5 s. An agent that can list its commands registers `COMMANDS["<id>"]` and sets
   `skills.commands`; the adapter's `status` names the commands the status line's model and level
-  run.
+  run. An adapter's `live` names the file, in the folder named after the session's log, where the
+  agent keeps what it is doing right now (`model/live.js` reads it: `kind` thinking, text, call,
+  tool or idle, with `tool`, `intent` and `text`); the chat reads it every 0.3 s while the agent
+  works (1 s on another machine, 3 s while there is no file). OMP writes it through
+  `omp/herdr-chat-live.ts`, since OMP logs a message only once it ends.
 
 **Platform notes:**
 

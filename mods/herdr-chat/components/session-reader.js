@@ -1,10 +1,11 @@
-import { appHome, shared, setShared, watchFolder } from "herdr";
+import { appHome, shared, setShared, watchFolder, readTextFile } from "herdr";
 import { readFile } from "fs/promises";
 import { sessionOf, chatKey } from "../common.js";
 import { base64Utf8, onWindows, python } from "../platform.js";
 import { target, agentTargets, readScreen } from "../terminal.js";
 import { supportedNames } from "../harnesses/index.js";
 import { blankSession, parseReaderInSlices, applyRead, readerArgs, embeddedReader, readerFromFolder, compressProgram, compressedReader, readerProgram, batchProgram, splitBatch } from "../model/session.js";
+import { livePath, parseLive } from "../model/live.js";
 
 const SESSIONS_KEPT = 32;
 const READ_AFTER = [1000, 4000];
@@ -13,6 +14,7 @@ const WAIT_EVERY = 3000;
 const RETRY_AFTER = 5000;
 const STALE_AFTER = 3000, CHECK_AFTER = 300, SILENT_AFTER = 5000;
 const PATHS_KEY = "herdr-chat.paths";
+const LIVE_EVERY = 300, LIVE_REMOTE_EVERY = 1000, LIVE_ABSENT_EVERY = 3000;
 
 let readerBase64 = null;
 async function readerSource() {
@@ -85,6 +87,7 @@ export class SessionReader {
 
   noticeAgents(cx) {
     // Reads what changed in herdr's agent list since the last look: the session on screen, others in the background.
+    this.readLive(cx);
     const all = agentTargets();
     const now = new Map(all.map(t => [chatKey(t), `${t.status}|${t.activity}|${t.turn}|${t.statusMs}`]));
     const first = !this.facts;
@@ -118,6 +121,33 @@ export class SessionReader {
     if (ready.some(d => d.key !== undefined && d.key === this.key)) this.read(cx);
     const machines = new Set(ready.filter(d => d.key === undefined).map(d => d.machine));
     if (machines.size) this.warm(cx, machines);
+  }
+
+  readLive(cx) {
+    // What the agent on screen is doing right now, from the live file its harness keeps beside its log while it works:
+    // read every LIVE_EVERY ms here (LIVE_REMOTE_EVERY on another machine, LIVE_ABSENT_EVERY while there's no file),
+    // and dropped once the agent stops working.
+    const t = target(), s = this.session;
+    const file = t?.status === "working" && t.harness?.live ? livePath(s.path, t.harness.live) : "";
+    if (!file) {
+      if (s.live) { s.live = null; cx.notify(); }
+      return;
+    }
+    const wait = this.liveMissing ? LIVE_ABSENT_EVERY : t.remote ? LIVE_REMOTE_EVERY : LIVE_EVERY;
+    if (this.liveReading || Date.now() - (this.liveReadAt ?? 0) < wait) return;
+    this.liveReading = true; this.liveReadAt = Date.now();
+    const key = this.key;
+    cx.spawn(async cx => {
+      try {
+        const text = await readTextFile(file, t.machine ? { on: t.machine } : undefined);
+        this.liveMissing = text == null;
+        const live = parseLive(text);
+        if (this.key !== key || JSON.stringify(live) === JSON.stringify(this.session.live)) return;
+        this.session.live = live;
+        cx.notify();
+      } catch { this.liveMissing = true; }
+      finally { this.liveReading = false; }
+    });
   }
 
   switchTo(t, key) {

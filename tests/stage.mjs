@@ -31,7 +31,7 @@ export const hc = async () => ({ code: 0, stdout: '{"path":"/x/placed.png"}' });
 export const run = () => {}, shared = () => null, setShared = () => {}, terminals = () => [], settings = () => ({});
 export const focused = () => ({ tab: "tb", space: "sp", terminal: "t1" });
 export const agents = () => [{ address: "t1", tab: "tb", space: "sp", app: "claude-code", status: "working", pane: "p1" }];
-export const panes = () => [], props = () => ({}), home = () => "/home/u", watchFolder = () => new Promise(() => {});
+export const panes = () => [], props = () => ({}), home = () => "/home/u", watchFolder = () => new Promise(() => {}), readTextFile = async () => null;
 export const theme = () => new Proxy({}, { get: () => "#888888" });`);
   cpSync(MOD, join(dir, "mod"), { recursive: true });
   return {

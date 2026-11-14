@@ -8,6 +8,8 @@ import { row } from "./ui/rows.js";
 import { hud } from "./ui/hud.js";
 import { COLUMN, programIcon, paneButtons, statusBadge, viewToggle, clock } from "./ui/primitives.js";
 import { todoView, agentsView } from "./model/hud.js";
+import { liveView } from "./model/live.js";
+import { liveTail } from "./ui/live.js";
 import { diagramFor, renderQueuedDiagrams, hasQueuedDiagrams, splitDiagrams } from "./diagrams.js";
 import { canMirror } from "./harnesses/index.js";
 import { isHeader, terminalHeader } from "./header.js";
@@ -170,11 +172,16 @@ export default class HerdrChat extends View {
           .border_1().border_color(t.border).text_size(12.5).text_color(t.foreground).hover(s => s.bg(t.hover))
           .on_click((_e, cx) => this.reader.retry(cx)).child("Retry"));
     }
-    if (active?.status === "working") return h_flex().w_full().max_w(COLUMN).h(26).gap(8).items_center()
-      .child(div().w(14).text_size(15).text_color(t.accent).frames(SPARK, 120).child(SPARK[0]))
-      .child(div().flex_1().min_w(0).truncate().text_size(13.5).text_color(t.muted)
-        .loop("opacity", { from: 0.55, to: 1, period: 1600 })
-        .child((active.activity ? `${active.activity}…`.replace(/……$/, "…") : "Working…") + (cue === "checking" ? " · checking for new messages" : "")));
+    if (active?.status === "working") {
+      const live = liveView(this.reader.session.live);
+      const said = live ? `${live.title}…` : active.activity ? `${active.activity}…`.replace(/……$/, "…") : "Working…";
+      const spark = h_flex().w_full().max_w(COLUMN).h(26).gap(8).items_center()
+        .child(div().w(14).text_size(15).text_color(t.accent).frames(SPARK, 120).child(SPARK[0]))
+        .child(div().flex_1().min_w(0).truncate().text_size(13.5).text_color(t.muted)
+          .loop("opacity", { from: 0.55, to: 1, period: 1600 })
+          .child(said + (cue === "checking" ? " · checking for new messages" : "")));
+      return live?.lines.length ? v_flex().w_full().max_w(COLUMN).gap(4).child(spark).child(liveTail(t, live)) : spark;
+    }
     if (cue === "checking") return h_flex().w_full().max_w(COLUMN).h(26).gap(8).items_center()
       .child(div().size(8).mx(3).rounded(4).flex_none().bg(t.accent).loop("opacity", { from: 0.25, to: 1, period: 900 }))
       .child(div().flex_1().min_w(0).truncate().text_size(13.5).text_color(t.muted)

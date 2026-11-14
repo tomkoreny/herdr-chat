@@ -19,6 +19,7 @@ const SHAPE = {
   skills: v => Boolean(v && Array.isArray(v.triggers) && v.triggers.length && typeof v.invoke === "string" && v.triggers.includes(v.invoke[0]) && Array.isArray(v.user) && Array.isArray(v.project) && Array.isArray(v.skip) && (v.commands === undefined || v.commands === true) && Object.keys(v).every(k => ["triggers", "invoke", "user", "project", "skip", "enterTwice", "commands"].includes(k))),
   status: v => v === undefined || Boolean(v && typeof v === "object" && Object.keys(v).length && Object.entries(v).every(([k, c]) => ["model", "effort"].includes(k) && typeof c === "string" && c.length > 0)),
   reader: v => typeof v === "string" && v.length > 0,
+  live: v => v === undefined || (typeof v === "string" && /^[\w.-]+$/.test(v)),
 };
 for (const [app, h] of Object.entries(HARNESSES)) {
   check(`${app}: registered under its own id`, h.id, app);
