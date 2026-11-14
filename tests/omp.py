@@ -146,6 +146,38 @@ try:
     check("once OMP was started again, the subagents an earlier one left open are not at work", [a["id"] for a in status(read(pid=running.pid))["agents"]], ["Fresh"])
 finally: running.kill()
 
+# OMP names the session it runs in a crumb called after its terminal (pts-3 on Linux, ttys012 on macOS),
+# the session file on its second line: how a terminal started in another folder finds its session. The
+# stand-in runs as OMP does in a terminal, the pty its controlling terminal, and says which pty that is.
+import pty, signal
+elsewhere = os.path.join(home, "elsewhere")
+os.makedirs(elsewhere)
+said_tty = os.path.join(home, "tty")
+held = os.path.join(home, "standin", "held")
+with open(held, "w") as f: f.write("#!%s\nimport os, sys, time\nopen(sys.argv[1], 'w').write(os.ttyname(0))\ntime.sleep(60)\n" % sys.executable)
+os.chmod(held, 0o755)
+pid, main = pty.fork()
+if pid == 0:
+    os.chdir(elsewhere)
+    os.execv(held, [held, said_tty])
+try:
+    for _ in range(100):
+        if os.path.exists(said_tty) and os.path.getsize(said_tty): break
+        time.sleep(0.05)
+    with open(said_tty) as f: tty = f.read()
+    crumbs = os.path.join(home, ".omp", "agent", "terminal-sessions")
+    os.makedirs(crumbs)
+    with open(os.path.join(crumbs, "pts-" + tty[len("/dev/pts/"):] if tty.startswith("/dev/pts/") else os.path.basename(tty)), "w") as f:
+        f.write(work + "\n" + log + "\n")
+    args = [sys.executable, "-I", str(reader), "--app", "omp", "--label", "omp", "--cwd", elsewhere,
+            "--pid", str(pid), "--created", str(int(time.time() * 1000))]
+    out = tagged(subprocess.run(args, capture_output=True, text=True, env={**os.environ, "HOME": home}).stdout)
+    check("a terminal started in another folder shows the session OMP named for its terminal", next(f[0] for tag, f in out if tag == "PATH"), log)
+finally:
+    os.kill(pid, signal.SIGKILL)
+    os.waitpid(pid, 0)
+    os.close(main)
+
 bin_dir = os.path.join(home, "bin")
 os.makedirs(bin_dir)
 fake = os.path.join(bin_dir, "omp")

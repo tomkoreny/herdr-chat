@@ -20,6 +20,18 @@ def omp_call(name, inp):
         return {"k": "agent", "d": short(", ".join(n for n in names if n), 200) or intent, "n": max(1, len(tasks))}
     return {"k": "other", "d": (name + ": " + intent) if intent else name}
 
+def omp_tty(pid):
+    """The terminal a process reads from, named as OMP names its crumb: pts-3 on Linux, ttys012 on macOS."""
+    if os.path.isdir("/proc"):
+        try: tty = os.readlink("/proc/%d/fd/0" % pid)
+        except OSError: return None
+        return "pts-" + tty[len("/dev/pts/"):] if tty.startswith("/dev/pts/") else None
+    try:
+        import subprocess
+        tty = subprocess.run(["ps", "-o", "tty=", "-p", str(pid)], capture_output=True, text=True).stdout.strip()
+    except Exception: return None
+    return tty if tty.startswith("ttys") else None
+
 def omp_crumb():
     """The session OMP itself recorded for this terminal: (path, known).
 
@@ -28,10 +40,9 @@ def omp_crumb():
     file older than the terminal belongs to an earlier owner of that pty.
     `known` without a path is a session OMP has opened but not written yet."""
     for pid in terminal_pids():
-        try: tty = os.readlink("/proc/%d/fd/0" % pid)
-        except OSError: continue
-        if not tty.startswith("/dev/pts/"): continue
-        crumb = os.path.join(HOME, ".omp", "agent", "terminal-sessions", "pts-" + tty[len("/dev/pts/"):])
+        name = omp_tty(pid)
+        if not name: continue
+        crumb = os.path.join(HOME, ".omp", "agent", "terminal-sessions", name)
         try:
             if os.path.getmtime(crumb) < A.created / 1000 - 10: return None, False
             with open(crumb, encoding="utf-8", errors="replace") as f: lines = f.read().split("\n")
@@ -52,7 +63,7 @@ def omp_folders(cwd):
 def find_omp():
     path, known = omp_crumb()
     if known: return path
-    # No pty to go by (macOS, an OMP that keeps no session): the newest log of the terminal's folders.
+    # No crumb to go by (Windows, an OMP that keeps no session): the newest log of the terminal's folders.
     since = A.created / 1000 - 10
     files = set()
     for cwd in candidate_cwds():
