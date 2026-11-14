@@ -20,7 +20,7 @@ export function summary(steps) {
   const order = [], counts = {}, files = {};
   for (const c of calls) {
     if (!(c.k in counts)) { order.push(c.k); counts[c.k] = 0; files[c.k] = new Set(); }
-    counts[c.k]++;
+    counts[c.k] += c.n ?? 1;
     if (c.k === "edit") for (const f of (c.d || "").split(", ").filter(Boolean)) files.edit.add(f);
   }
   const parts = order.map(k => {

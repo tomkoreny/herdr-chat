@@ -42,6 +42,13 @@ status bar) with the chat and the terminal sharing the work area.
     opening to each step with its output;
   - mermaid blocks drawn as diagrams in the reply;
   - while the agent works, an accent spark and its live status;
+  - OMP's to-do list and subagents in a card above the reply box, as OMP's TUI shows them above its
+    prompt: the tasks closed of all with a bar, the active phase (Roman-numbered) with its tasks
+    (ticked, turning while in progress, crossed out when abandoned) and the phases after it with
+    their counts; then each subagent at work with its kind, how long it has run and the intent of
+    the tool it ran last. Its title folds it to one line with the task at hand. The list goes when
+    OMP's TUI dismisses it (by hand, or a while after the last task closed); a subagent goes when
+    its reply ends its turn. The card folds while a question card shows;
   - a question card above the reply box when the agent asks something;
   - a reply box that grows to four lines, with a round send button in the theme's accent (a Stop
     button while the agent works) and a line under it naming the terminal it sends to, led by the
@@ -117,8 +124,8 @@ the terminal itself belongs to the layout. The same mod runs twice: as the chat
 | `header.js` | the terminal pane header with the toggle |
 | `common.js` | session keys, each session's view, `layout.select` |
 | `components/` | `chat-list.js` (rows, measuring, following), `question-card.js`, `composer.js` (reply box, drafts, images, sending, status line), `session-reader.js` (reading and keeping conversations), `skill-menu.js` (skills, commands and their choices) |
-| `model/` | pure data, free of gpui and herdr imports: transcript folding, session state, status line, prompt parsing, caret, hash |
-| `ui/` | `primitives.js` (icons, buttons, badges, toggle) and `rows.js` (each conversation row) |
+| `model/` | pure data, free of gpui and herdr imports: transcript folding, session state, status line, the to-do list and subagents card, prompt parsing, caret, hash |
+| `ui/` | `primitives.js` (icons, buttons, badges, toggle), `rows.js` (each conversation row) and `hud.js` (the to-do list and subagents card) |
 | `harnesses/` | one adapter per agent: label, image style, drafts, prompt options, input box, skills, reader. All agent-specific behaviour lives here |
 | `readers/` | the session reader in Python 3.6+, one file per agent beside `common.py` and `main.py`, joined in `manifest.json` order |
 | `terminal.js`, `platform.js` | the target agent and its screen; Windows and Unix differences |
@@ -185,9 +192,16 @@ the terminal itself belongs to the layout. The same mod runs twice: as the chat
   set `state["status"]` for the status line: `model` (or `inferredModel` until one is logged),
   `effort` with the `level` in force, `context` (None when unknown) and `cost`. The chat keeps the
   latest of each and adds up each read's `cost`. OMP's reader follows OMP's own rules: the default
-  role's model, the context as `calculateContextTokens` counts it, reset by a compaction. An agent
-  that can list its commands registers `COMMANDS["<id>"]` and sets `skills.commands`; the adapter's
-  `status` names the commands the status line's model and level run.
+  role's model, the context as `calculateContextTokens` counts it, reset by a compaction. For the
+  card above the reply box it also sets `todo` (the entry that set the list, and its phases, rebuilt
+  as `canonicalTodoPhases` does), `todoHud` (the entry OMP's TUI dismissed or revealed) and, on
+  every read, `agents`: the subagents in their own logs (`<session>/<id>.jsonl`, not OMP's `__` side
+  logs) whose latest message isn't a reply that ended their turn (OMP writes `session_exit` only
+  minutes later) and that began after the OMP in the terminal started, since one an earlier OMP left
+  open was cut off. An agent on another machine waiting on its subagents is read
+  every 1.5 s. An agent that can list its commands registers `COMMANDS["<id>"]` and sets
+  `skills.commands`; the adapter's `status` names the commands the status line's model and level
+  run.
 
 **Platform notes:**
 

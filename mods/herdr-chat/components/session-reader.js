@@ -107,6 +107,10 @@ export class SessionReader {
       this.quietReadAt = at;
       if (shown.remote && shown.status === "working") this.read(cx);
       this.host.card.read(cx, shown);
+    } else if (shown?.remote && this.session.status?.agents?.length && at - Math.max(this.shownChangedAt ?? 0, this.quietReadAt ?? 0) >= QUIET_EVERY) {
+      // An agent waiting on its subagents changes nothing herdr reports, and another machine's logs can't be watched from here.
+      this.quietReadAt = at;
+      this.read(cx);
     }
     const ready = this.dueReads.filter(d => d.at <= at);
     if (!ready.length) return;

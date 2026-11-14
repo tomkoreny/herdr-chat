@@ -5,7 +5,9 @@ import { switchTo, showView, preferredView, sessionOf, chatKey } from "./common.
 import { target, inputBox, interruptAgent } from "./terminal.js";
 import { keyRows, splitCode, withCopyRows, stepRows, stepText, withoutRetracted } from "./model/transcript.js";
 import { row } from "./ui/rows.js";
+import { hud } from "./ui/hud.js";
 import { COLUMN, programIcon, paneButtons, statusBadge, viewToggle, clock } from "./ui/primitives.js";
+import { todoView, agentsView } from "./model/hud.js";
 import { diagramFor, renderQueuedDiagrams, hasQueuedDiagrams, splitDiagrams } from "./diagrams.js";
 import { canMirror } from "./harnesses/index.js";
 import { isHeader, terminalHeader } from "./header.js";
@@ -39,7 +41,7 @@ export default class HerdrChat extends View {
     this.reader = new SessionReader(this);
     this.card = new QuestionCard(this);
     this.composer = new Composer(this, cx);
-    this.width = 900; this.zoom = 1; this.rootPx = 0;
+    this.width = 900; this.zoom = 1; this.rootPx = 0; this.hudFolded = false;
     this.visit = shared("herdr-chat.visit");
     this.refresh(cx);
     cx.timer.every(1500, cx => inputHighlight(cx));
@@ -238,6 +240,11 @@ export default class HerdrChat extends View {
       canJump: !this.card.showing && active?.status !== "blocked",
     });
     const status = this.status(t, active);
+    const s = this.reader.session.status;
+    const panel = hud(t, {
+      todo: todoView(s), agents: agentsView(s, Date.now()), working: active?.status === "working",
+      folded: this.hudFolded || this.card.showing, onToggle: cx => { this.hudFolded = !this.hudFolded; cx.notify(); },
+    });
     return v_flex().id("herdr-chat-root").relative().size_full().min_h(0).rounded(10).border_1().border_color(t.border)
       .bg(t.background).text_color(t.foreground)
       .on_size_change((size, cx) => { this.rootPx = size.width; const w = designPx(size.width, this.zoom); if (w >= 200 && Math.abs(w - this.width) > 8) { this.width = w; cx.notify(); } })
@@ -253,6 +260,7 @@ export default class HerdrChat extends View {
       .when(!empty, el => el.child(body))
       .when(Boolean(measure), el => el.child(measure))
       .child(v_flex().w_full().flex_none().items_center().px(24).pt(12).pb(14).gap(12)
+        .when(Boolean(panel), el => el.child(panel))
         .when(Boolean(status), el => el.child(status))
         .child(this.composer.render(t, active, this.reader.session.status)));
   }

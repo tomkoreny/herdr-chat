@@ -1,5 +1,5 @@
 import { stage } from "./stage.mjs";
-const { foldActivity, stepText, stepRows, OUTPUT_LINES } = await stage().load("model/transcript.js");
+const { foldActivity, stepText, stepRows, summary, OUTPUT_LINES } = await stage().load("model/transcript.js");
 let failed = 0;
 const check = (name, got, want) => {
   const ok = JSON.stringify(got) === JSON.stringify(want);
@@ -29,4 +29,7 @@ check("a one-line JSON body is wrapped, not cut, up to the preview's size", step
 check("an opened output shows whole", stepText({ k: "shell", o: out }, true).text, out);
 const group = { kind: "tools", key: "g1", calls: [{ k: "think", o: "x" }, { k: "shell", d: "ls", o: "a" }] };
 check("an opened group's steps are keyed by the group and their place", stepRows(group).map(r => [r.kind, r.key.split(".")[0], r.last]), [["step", "g1/0", false], ["step", "g1/1", true]]);
+check("a call that starts several agents counts each of them, and a single agent is named",
+  [summary([{ k: "agent", d: "Audit, Review", n: 2 }, { k: "todo", d: "done: map" }]), summary([{ k: "agent", d: "Audit", n: 1 }])],
+  ["Ran 2 agents, updated the to-do list", "Ran Audit"]);
 process.exit(failed ? 1 : 0);

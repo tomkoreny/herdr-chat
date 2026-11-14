@@ -29,10 +29,11 @@ def write(entries, mode="w"):
     with open(log, mode) as f:
         for e in entries: f.write(json.dumps(e, separators=(",", ":"), ensure_ascii=False) + "\n")
 
-def read(offset=0, leaf=""):
-    """The reader's tagged output for an OMP terminal in `work`, from `offset` on."""
+def read(offset=0, leaf="", pid=0):
+    """The reader's tagged output for an OMP terminal in `work`, from `offset` on; `pid`, the terminal's process."""
     args = [sys.executable, "-I", str(reader), "--app", "omp", "--label", "omp", "--cwd", work, "--known", log, "--offset", str(offset)]
     if leaf: args += ["--leaf", leaf]
+    if pid: args += ["--pid", str(pid)]
     return tagged(subprocess.run(args, capture_output=True, text=True, env={**os.environ, "HOME": home}).stdout)
 
 said = lambda text: [{"type": "text", "text": text}]
@@ -75,6 +76,75 @@ check("a compaction resets the context to what it kept", status(compacted), {"co
 offset = next(int(f[0]) for tag, f in compacted if tag == "OFFSET")
 write([{"type": "compaction", "id": "c2", "parentId": "c1", "firstKeptEntryId": "b2", "tokensBefore": 400}], "a")
 check("or to unknown when it doesn't say", status(read(offset, "c1")), {"context": None})
+
+def todo_result(id, parent, op, phases, error=False):
+    return {"type": "message", "id": id, "parentId": parent, "message": {"role": "toolResult", "toolCallId": "t" + id, "toolName": "todo",
+            "isError": error, "content": said("ok"), "details": {"op": op, "phases": phases}}}
+phase = lambda name, *tasks: {"name": name, "tasks": [{"content": c, "status": s} for c, s in tasks]}
+write([
+    {"type": "message", "id": "d1", "parentId": "c2", "message": {"role": "assistant", "content": [
+        {"type": "toolCall", "id": "td1", "name": "todo", "arguments": {"i": "Tracking", "op": "done", "task": "Map the code"}},
+        {"type": "toolCall", "id": "tk1", "name": "task", "arguments": {"i": "Spawning", "context": "x", "tasks": [{"name": "Audit", "task": "a"}, {"name": "Review", "agent": "reviewer", "task": "b"}]}}]}},
+    todo_result("d2", "d1", "init", [phase("Find", ("Map the code", "completed"), ("Read the tests", "blocked")), phase("Ship", ("Push", "pending"))]),
+], "a")
+fresh = read()
+check("a todo call names its operation and task, and a task call its agents, counting them", [json.loads(f[1]) for tag, f in fresh if tag == "C"][-2:],
+      [{"k": "todo", "d": "done: Map the code"}, {"k": "agent", "d": "Audit, Review", "n": 2}])
+check("the to-do list is the latest todo result's, a blocked task counted as pending", status(fresh)["todo"], {"id": "d2", "phases": [
+    {"name": "Find", "tasks": [{"content": "Map the code", "status": "completed"}, {"content": "Read the tests", "status": "pending"}]},
+    {"name": "Ship", "tasks": [{"content": "Push", "status": "pending"}]}]})
+write([
+    todo_result("d3", "d2", "view", [phase("Viewed", ("x", "pending"))]),
+    todo_result("d4", "d3", "done", [phase("Failed", ("x", "pending"))], error=True),
+    {"type": "custom", "customType": "todo_hud_state", "id": "d5", "parentId": "d4", "data": {"sourceEntryId": "d2", "fingerprint": "f", "visibility": "dismissed"}},
+], "a")
+hidden = status(read())
+check("a view or a failed call leaves the list as it was, and OMP's TUI hiding it is reported with the entry it hid",
+      (hidden["todo"]["id"], hidden["todoHud"]), ("d2", {"id": "d2", "visibility": "dismissed"}))
+write([{"type": "custom", "customType": "user_todo_edit", "id": "d6", "parentId": "d5", "data": {"phases": [phase("Mine", ("Edit by hand", "in_progress"))]}}], "a")
+check("the person's own edit replaces the list", status(read())["todo"], {"id": "d6", "phases": [{"name": "Mine", "tasks": [{"content": "Edit by hand", "status": "in_progress"}]}]})
+
+import time
+from datetime import datetime, timezone
+folder = log[:-len(".jsonl")]
+os.makedirs(folder)
+iso = lambda t: datetime.fromtimestamp(t, timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+def agent_log(name, started, tail, agent="task"):
+    """A subagent's log beside the session's, as OMP starts it (title, session, session_init), then `tail`."""
+    with open(os.path.join(folder, name + ".jsonl"), "w") as f:
+        for e in [{"type": "title", "v": 1, "title": "", "pad": "    "}, {"type": "session", "version": 3, "id": "s" + name, "timestamp": started, "cwd": work},
+                  {"type": "session_init", "id": "i1", "parentId": None, "task": "do it", "systemPrompt": ["long"], "agent": agent}] + tail:
+            f.write(json.dumps(e, separators=(",", ":")) + "\n")
+call = {"type": "message", "id": "a1", "parentId": "i1", "message": {"role": "assistant", "stopReason": "toolUse", "content": [
+    {"type": "toolCall", "id": "c1", "name": "read", "arguments": {"i": "Reading the plan", "path": "x"}, "intent": "Reading the plan"}]}}
+result = {"type": "message", "id": "a2", "parentId": "a1", "message": {"role": "toolResult", "toolCallId": "c1", "toolName": "read", "content": said("plan")}}
+began = {"type": "custom", "customType": "tool_execution_start", "id": "s1", "parentId": "a2", "data": {"toolCallId": "c2", "toolName": "bash", "intent": "Running the tests"}}
+answered = {"type": "message", "id": "a3", "parentId": "a2", "message": {"role": "assistant", "stopReason": "stop", "content": said("Done: the plan holds.")}}
+usage = {"type": "model_usage", "id": "u1", "parentId": "a3", "activeLeafId": "a3", "usage": {}}
+asked = {"type": "message", "id": "a4", "parentId": "a3", "message": {"role": "user", "content": said("One more thing")}}
+closed = {"type": "custom", "customType": "session_exit", "id": "e1", "parentId": "a1", "data": {"reason": "dispose"}}
+earlier = iso(time.time() - 60)
+agent_log("Audit", earlier, [call, result, began])
+agent_log("Review", earlier, [call, result], agent="reviewer")
+agent_log("Finished", earlier, [call, result, answered, usage])
+agent_log("Revived", earlier, [call, result, answered, asked])
+agent_log("Closed", earlier, [call, closed])
+agent_log("__advisor", earlier, [call])
+at = int(datetime.fromisoformat(earlier.replace("Z", "+00:00")).timestamp() * 1000)
+check("subagents are at work, with their kind and the tool they ran last (its intent), until a reply ends their turn (one given more to do "
+      "is again); a closed log and OMP's side logs are not listed",
+      [(a["id"], a["agent"], a["intent"], a["tool"], a["started"]) for a in status(read())["agents"]],
+      [("Audit", "task", "Running the tests", "bash", at), ("Review", "reviewer", "Reading the plan", "read", at), ("Revived", "task", "Reading the plan", "read", at)])
+standin = os.path.join(home, "standin", "omp")
+os.makedirs(os.path.dirname(standin))
+with open(standin, "w") as f: f.write("#!%s\nimport time\ntime.sleep(60)\n" % sys.executable)
+os.chmod(standin, 0o755)
+running = subprocess.Popen([standin], cwd=work, stdin=subprocess.DEVNULL)
+try:
+    time.sleep(0.3)
+    agent_log("Fresh", iso(time.time() + 1), [call])
+    check("once OMP was started again, the subagents an earlier one left open are not at work", [a["id"] for a in status(read(pid=running.pid))["agents"]], ["Fresh"])
+finally: running.kill()
 
 bin_dir = os.path.join(home, "bin")
 os.makedirs(bin_dir)
