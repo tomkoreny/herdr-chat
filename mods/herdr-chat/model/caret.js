@@ -1,21 +1,3 @@
-const MARK = "⁣";
-
-export function caretOf(state) {
-  // Where the cursor (and selection) is.
-  const before = state.value();
-  let at = 0, selected = 0;
-  try {
-    state.replace(MARK);
-    const marked = state.value();
-    while (at < before.length && before[at] === marked[at]) at++;
-    selected = Math.max(0, before.length + 1 - marked.length);
-  } finally {
-    if (state.value() !== before) state.set_value(before);
-  }
-  state.set_selected_range({ start: at, end: at + selected });
-  return { start: at, end: at + selected };
-}
-
 function onCharacter(text, at) {
   // Never between the two halves of a character outside the BMP (an emoji): offsets are UTF-16.
   const c = text.charCodeAt(at);

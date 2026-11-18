@@ -144,13 +144,19 @@ def omp_context(usage):
 
 def omp_status(o):
     """What an entry tells about the session, into state["status"], as OMP rebuilds it: the model of the
-    default role (`model`; until one is logged, the latest reply's as `inferredModel`), the thinking level
-    chosen (`effort`, such as auto) and the one in force (`level`), the tokens the context held after the
-    latest reply or compaction (`context`, None when unknown), what the replies read here cost (`cost`,
-    which the chat adds to what earlier reads found), the to-do list (`todo`: the entry that set it, and
-    its phases) and whether OMP's TUI hid it (`todoHud`: the entry it judged, and `dismissed` or `revealed`)."""
+    default role (`model`; until one is logged, the latest reply's as `inferredModel`), a model for this
+    session only that replaces it until the default role changes again (`localModel`: /switch, the TUI's
+    model cycling, plan and prewalk hand-offs, a retry's fallback; "" once a default change clears it),
+    the thinking level chosen (`effort`, such as auto) and the one in force (`level`), the tokens the
+    context held after the latest reply or compaction (`context`, None when unknown), what the replies
+    read here cost (`cost`, which the chat adds to what earlier reads found), the to-do list (`todo`: the
+    entry that set it, and its phases) and whether OMP's TUI hid it (`todoHud`: the entry it judged, and
+    `dismissed` or `revealed`)."""
     m, kind, seen = o.get("message") or {}, o.get("type"), {}
-    if kind == "model_change" and o.get("model") and (o.get("role") or "default") == "default": seen["model"] = str(o["model"])
+    if kind == "model_change" and o.get("model"):
+        role = o.get("role") or "default"
+        if role == "default": seen.update(model=str(o["model"]), localModel="")
+        elif role in ("temporary", "prewalk", "fallback"): seen["localModel"] = str(o["model"])
     elif kind == "thinking_level_change":
         seen["level"] = str(o.get("thinkingLevel") or "off")
         seen["effort"] = str(o.get("configured") or seen["level"])

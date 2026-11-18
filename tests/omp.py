@@ -52,7 +52,7 @@ write([
 first = read()
 check("a fresh read reports the default role's model (not the advisor's), the level chosen and the one in force, the context as OMP counts it "
       "(less the provider's orchestration, not from an aborted reply), and what the replies cost (not side work like titles)",
-      status(first), {"model": "anthropic/claude-opus-5-5", "level": "high", "effort": "auto", "inferredModel": "anthropic/claude-opus-5-5", "context": 1000, "cost": 0.375})
+      status(first), {"model": "anthropic/claude-opus-5-5", "localModel": "", "level": "high", "effort": "auto", "inferredModel": "anthropic/claude-opus-5-5", "context": 1000, "cost": 0.375})
 check("and starts the chat over", ("RESET", []) in first, True)
 offset = next(int(f[0]) for tag, f in first if tag == "OFFSET")
 leaf = next(f[0] for tag, f in first if tag == "LEAF")
@@ -65,7 +65,7 @@ write([
 ], "a")
 more = read(offset, leaf)
 check("a later read reports only what it saw: the switch, the context the provider counted, and its own cost",
-      status(more), {"model": "openai-codex/gpt-5.5", "inferredModel": "openai-codex/gpt-5.5", "context": 2100, "cost": 0.5})
+      status(more), {"model": "openai-codex/gpt-5.5", "localModel": "", "inferredModel": "openai-codex/gpt-5.5", "context": 2100, "cost": 0.5})
 check("without starting over", ("RESET", []) in more, False)
 offset = next(int(f[0]) for tag, f in more if tag == "OFFSET")
 check("a read with nothing new reports no status", status(read(offset, "b3")), None)
@@ -77,12 +77,23 @@ offset = next(int(f[0]) for tag, f in compacted if tag == "OFFSET")
 write([{"type": "compaction", "id": "c2", "parentId": "c1", "firstKeptEntryId": "b2", "tokensBefore": 400}], "a")
 check("or to unknown when it doesn't say", status(read(offset, "c1")), {"context": None})
 
+models = []
+for entry in [{"type": "model_change", "id": "m1", "parentId": "c2", "model": "anthropic/claude-fable-5-2", "role": "temporary"},
+              {"type": "model_change", "id": "m2", "parentId": "m1", "model": "openai-codex/gpt-6.1-sol", "role": "smol"},
+              {"type": "model_change", "id": "m3", "parentId": "m2", "model": "anthropic/claude-opus-5-5", "role": "default"}]:
+    write([entry], "a")
+    s = status(read())
+    models.append((s["model"], s["localModel"]))
+check("a model chosen for this session only (/switch, the TUI's cycling) is reported until the default role changes again, "
+      "and another role's model (smol) changes neither",
+      models, [("openai-codex/gpt-5.5", "anthropic/claude-fable-5-2"), ("openai-codex/gpt-5.5", "anthropic/claude-fable-5-2"), ("anthropic/claude-opus-5-5", "")])
+
 def todo_result(id, parent, op, phases, error=False):
     return {"type": "message", "id": id, "parentId": parent, "message": {"role": "toolResult", "toolCallId": "t" + id, "toolName": "todo",
             "isError": error, "content": said("ok"), "details": {"op": op, "phases": phases}}}
 phase = lambda name, *tasks: {"name": name, "tasks": [{"content": c, "status": s} for c, s in tasks]}
 write([
-    {"type": "message", "id": "d1", "parentId": "c2", "message": {"role": "assistant", "content": [
+    {"type": "message", "id": "d1", "parentId": "m3", "message": {"role": "assistant", "content": [
         {"type": "toolCall", "id": "td1", "name": "todo", "arguments": {"i": "Tracking", "op": "done", "task": "Map the code"}},
         {"type": "toolCall", "id": "tk1", "name": "task", "arguments": {"i": "Spawning", "context": "x", "tasks": [{"name": "Audit", "task": "a"}, {"name": "Review", "agent": "reviewer", "task": "b"}]}}]}},
     todo_result("d2", "d1", "init", [phase("Find", ("Map the code", "completed"), ("Read the tests", "blocked")), phase("Ship", ("Push", "pending"))]),

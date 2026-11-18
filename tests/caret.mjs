@@ -1,4 +1,4 @@
-import { lineMove, caretOf } from "../mods/herdr-chat/model/caret.js";
+import { lineMove } from "../mods/herdr-chat/model/caret.js";
 let failed = 0;
 const check = (got, want, what) => { const ok = JSON.stringify(got) === JSON.stringify(want); console.log(`${ok ? "PASS" : "FAIL"} ${what}${ok ? "" : `  got ${JSON.stringify(got)}, want ${JSON.stringify(want)}`}`); if (!ok) failed++; };
 const t = "first line\nsecond, longer line\nend";
@@ -15,24 +15,4 @@ check(lineMove("ab\n\ncd", 1, 1).at, 3, "an empty line in between");
 const emoji = "x😀y\nabc";
 check(lineMove(emoji, 6, -1).at, 1, "↑ to a column before an emoji");
 check(lineMove(emoji, 7, -1).at, 1, "never lands between an emoji's two halves (column 2 is inside it)");
-const box = (text, start, end, failOnReplace = false) => {
-  // A stand-in textarea: text with a selection, which replace() types over.
-  let value = text, sel = { start, end };
-  return {
-    value: () => value,
-    replace: s => { if (failOnReplace) { value = value.slice(0, sel.start) + s + value.slice(sel.end); throw new Error("boom"); } value = value.slice(0, sel.start) + s + value.slice(sel.end); sel = { start: sel.start + s.length, end: sel.start + s.length }; },
-    set_value: v => { value = v; },
-    set_selected_range: r => { sel = r; },
-    sel: () => sel,
-  };
-};
-let b = box("hello world", 6, 6);
-check([caretOf(b), b.value(), b.sel()], [{ start: 6, end: 6 }, "hello world", { start: 6, end: 6 }], "reads the cursor, text and cursor unchanged");
-b = box("hello world", 0, 5);
-check([caretOf(b), b.value(), b.sel()], [{ start: 0, end: 5 }, "hello world", { start: 0, end: 5 }], "reads a selection, the selected text put back");
-b = box("a\u2063b c", 4, 4);
-check([caretOf(b).start, b.value()], [4, "a\u2063b c"], "a marker already in the text doesn't mislead it");
-b = box("keep this", 0, 4, true);
-let threw = false; try { caretOf(b); } catch { threw = true; }
-check([threw, b.value()], [true, "keep this"], "if replace() throws midway, the text is still put back");
 if (failed) process.exit(1);

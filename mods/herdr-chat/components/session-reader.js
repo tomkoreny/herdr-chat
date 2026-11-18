@@ -156,6 +156,7 @@ export class SessionReader {
     this.stash();
     this.key = key; this.lastId = ""; this.screenAskedAt = 0;
     this.watchToken = (this.watchToken ?? 0) + 1; this.watchedPath = ""; this.readError = ""; this.readStartedAt = 0;
+    this.folderWatch?.cancel();
     const kept = key ? this.sessions.get(key) : null;
     if (kept) this.session = kept;
     else {
@@ -242,17 +243,21 @@ export class SessionReader {
   }
 
   watch(cx, path) {
-    // Reads again whenever the log's folder changes (agents on this computer).
+    // Reads again whenever the log's folder changes (agents on this computer). The watch before it is released: herdr keeps at
+    // most 64 folders watched for all mods together, and may reclaim an idle one (it then resolves with nothing), after which the
+    // log is read again in case it changed meanwhile.
     if (!path || path === this.watchedPath) return;
     this.watchedPath = path;
     const token = this.watchToken = (this.watchToken ?? 0) + 1;
     const dir = path.replace(/[\\/][^\\/]*$/, "");
+    this.folderWatch?.cancel();
     cx.spawn(async cx => {
       while (this.watchToken === token) {
         let changed;
-        try { changed = await watchFolder(dir); } catch { return; }
+        try { changed = await (this.folderWatch = watchFolder(dir)); } catch { return; }
         if (this.watchToken !== token) return;
-        if (changed.some(p => /\.jsonl$/i.test(p))) this.read(cx);
+        if (!changed.length) { await cx.sleep(1000); if (this.watchToken !== token) return; }
+        if (!changed.length || changed.some(p => p === dir || /\.jsonl$/i.test(p))) this.read(cx);
       }
     });
   }

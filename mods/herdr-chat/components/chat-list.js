@@ -77,13 +77,9 @@ export class ChatList {
       this.scroll.scroll_to_bottom();
       this.needsScroll = false; this.settledSig = this.sig;
       if (this.settling) {
+        // scroll_to_bottom puts the last row on screen before the next frame (0.1.16), so the list shows from that frame on.
         const token = this.revealToken = (this.revealToken ?? 0) + 1;
-        const reveal = (cx, tries) => cx.timer.after(20, cx => {
-          if (this.revealToken !== token) return;
-          if (this.visibleEnd < this.rowCount && tries < 10) { this.scroll.scroll_to_bottom(); cx.notify(); reveal(cx, tries + 1); return; }
-          this.settling = false; cx.notify();
-        });
-        try { reveal(cx, 0); } catch { this.settling = false; }
+        try { cx.timer.after(20, cx => { if (this.revealToken === token) { this.settling = false; cx.notify(); } }); } catch { this.settling = false; }
       }
     }
     this.rowCount = rows.length + 1;

@@ -16,9 +16,9 @@ const host = {
   keepDraft: () => {},
   sendCommand: c => sent.push(c),
 };
-const cx = { notify: () => {}, spawn: () => {} };
+const cx = { notify: () => {}, spawn: () => {}, bind_keys: () => ({}) };
 const t = { address: "t1", created: 1, harness: HARNESSES.omp };
-const menu = new SkillMenu(host);
+const menu = new SkillMenu(host, cx);
 const levels = ["off", "low", "medium", "high", "xhigh"].map(name => ({ name, description: "" }));
 const models = [{ name: "anthropic/claude-opus-5-5", description: "Claude Opus 5.5" }, { name: "openai-codex/gpt-5.5", description: "GPT-5.5" }];
 menu.lists.set("t1:1", { items: [
@@ -72,5 +72,20 @@ menu.pick(t, "effort", "high", cx);
 check("a question from the agent closes it, so a pick can't answer the question", menu.view({ ...t, status: "blocked" }), null);
 check("for good", menu.view(t), null);
 check("only commands with choices open", (menu.pick(t, "compact", "", cx), menu.view(t)), null);
+
+const many = Array.from({ length: 12 }, (_, i) => ({ name: `provider/model-${i}`, description: `Model ${i}` }))
+  .concat([{ name: "anthropic/claude-opus-5-5", description: "Claude Opus 5.5 · 1M context" }]);
+menu.lists.get("t1:1").items.push({ name: "switch-all", description: "Switch among many", source: "builtin", choices: many });
+text = "a draft";
+menu.pick(t, "switch-all", "provider/model-3", cx);
+check("a long list from the status line can be searched, and starts on the current one",
+  [menu.view(t).searchable, menu.view(t).items.length, menu.view(t).items[menu.index].name], [true, 13, "provider/model-3"]);
+menu.search.set_value("opus");
+check("typing in its search keeps the matches, by name or description", names(), ["anthropic/claude-opus-5-5"]);
+menu.search.set_value("nothing like it");
+check("with no match it stays open to search again, and Enter runs nothing", [menu.view(t)?.items.length, menu.accept(t, cx), sent.length], [0, true, 1]);
+menu.search.set_value("model-1");
+check("Enter runs the match chosen, and the draft stays", [menu.accept(t, cx), sent.at(-1), text], [true, "/switch-all provider/model-1", "a draft"]);
+check("a short list has no search", (menu.pick(t, "effort", "high", cx), menu.view(t).searchable), false);
 
 process.exit(failed ? 1 : 0);

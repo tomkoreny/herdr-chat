@@ -96,25 +96,31 @@ Colours come from the active theme; icons are the mod's own SVGs in the theme's 
   each line's end padding is dropped and a picture's cells become one word. Other prompts show the
   screen's last lines with key buttons.
 - **Skills and commands:** typing `/` (also `$` on Codex, `@` on OpenCode) opens the agent's
-  skills: ↑↓ choose, Enter or Tab insert, Esc closes. OMP lists all its slash commands instead, as
-  its RPC mode reports them (`omp --mode rpc --no-session`, run for a moment in the terminal's
-  folder), and after a command and a space offers what can follow it: `/effort`'s levels,
-  `/switch`'s models, other commands' subcommands. Without OMP to ask, its skills show as
-  `/skill:` commands.
+  skills, a list that scrolls with the wheel or ↑↓: ↑↓ choose, Enter or Tab insert, Esc closes. OMP
+  lists all its slash commands instead, as its RPC mode reports them (`omp --mode rpc --no-session`,
+  run for a moment in the terminal's folder), and after a command and a space offers what can
+  follow it: `/effort`'s levels, `/switch`'s models, other commands' subcommands. Without OMP to
+  ask, its skills show as `/skill:` commands.
 - **Status line (OMP):** the session's model, thinking level, how full its context is and what its
-  replies cost, read from its log. Clicking the model or the level lists the choices, the current
-  one selected; picking one sends `/switch <model>` or `/effort <level>` to the terminal and leaves
-  the draft alone. Typing, a second click or Esc closes the list. Not clickable while the agent
-  waits on a question.
+  replies cost, read from its log. The model is the one in use: one chosen for this session only
+  (`/switch`, the TUI's model cycling, plan and prewalk hand-offs, a retry's fallback) until the
+  default role changes again, as OMP itself restores it. Clicking the model or the level lists the
+  choices, the current one selected; a list longer than eight rows (the models) has a search field
+  that takes the keyboard and matches names and descriptions. Picking one sends `/switch <model>`
+  or `/effort <level>` to the terminal and leaves the draft alone. Typing in the reply box, a
+  second click or Esc closes the list. Not clickable while the agent waits on a question.
 - **One draft:** on Linux and macOS, the reply box and the agent's own input box share one draft,
   images included, as you switch between Chat and Terminal.
 - **Reading:** each session log is found once and remembered. The first read takes its last 24 MB
   (up to 400 entries), and later reads take what was added. Agents are read again whenever herdr
-  reports a change in them, and the working agent on screen every 1.5 s. The 32 most recent
-  conversations stay in memory, so switching back is instant.
+  reports a change in them, whenever the shown agent's log folder changes (the watch on the folder
+  shown before is released, since herdr watches at most 64 folders for all mods), and the working
+  agent on screen every 1.5 s. The 32 most recent conversations stay in memory, so switching back
+  is instant.
 - **Following:** the chat stays at the bottom while you're there, and holds still when you scroll
   up.
-- **Highlight:** selected text, in the chat and in herdr's text boxes, uses a dimmed accent.
+- **Highlight:** selected text, in the chat and in herdr's text boxes, and the bar behind inline
+  code in replies use a dimmed accent.
 
 ## Built from
 
@@ -165,7 +171,8 @@ agent is doing right now in `<session>/__live.json` beside its log (see Adding a
 - writes image copies and drawn diagrams under `cache/herdr-chat/` in the Herdr home, and deletes
   its own files there after a day (delete that folder along with the mod to remove everything);
 - sets the app's `accent` and `selection` colours to a dimmed accent while it runs, so selected
-  text stays visible in herdr's text boxes. Theme files stay as they are;
+  text stays visible in herdr's text boxes and inline code in replies stays readable (gpui's
+  markdown draws a bar in the accent behind it). Theme files stay as they are;
 - works entirely offline.
 
 **Notes for building it:**
@@ -182,8 +189,10 @@ agent is doing right now in `<session>/__live.json` beside its log (see Adding a
 - **Diagrams:** write the theme's colours into Pele's SVG directly; herdr's SVG renderer draws
   inline colours.
 - **List rows:** handle clicks with the virtual list's `on_item_click`.
-- **↑ and ↓:** bind them in the textarea's `Input` context, and read the caret by typing an
-  invisible marker (`model/caret.js`).
+- **↑ and ↓:** bind them in the textarea's `Input` context, and read the caret with
+  `selected_range()` (Herdr 0.1.16 and newer).
+- **`herdr-app check`:** it runs `init()` for real, so the view starts no reads, timers or theme
+  change while `checking()` says so, and the composer leaves the image cache alone.
 - **Sizes:** measured sizes include the app's zoom and layout sizes take unzoomed px, so every
   measured size goes through `measure.js`.
 - **Theme colours:** `set_theme` restarts every mod copy, so apply it from a timer and only when
@@ -230,8 +239,8 @@ agent is doing right now in `<session>/__live.json` beside its log (see Adding a
 
 ## Done when
 
-- `herdr-app check ~/.config/herdr-app/mods/herdr-chat` passes and `herdr-app status` shows no
-  errors on the `herdr-chat` layout.
+- `herdr-app check ~/.config/herdr-app/mods/herdr-chat` passes (Herdr 0.1.16 or newer) and
+  `herdr-app status` shows no errors on the `herdr-chat` layout.
 - `npm test` passes on Linux or macOS.
 - A new tab for each supported agent opens on its chat, with the toggle in the header;
   Terminal brings the terminal back, and each session keeps its view after a restart.

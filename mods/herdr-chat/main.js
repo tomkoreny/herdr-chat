@@ -1,6 +1,6 @@
 import { View, div, image } from "gpui-kit";
 import { set_theme, v_flex, h_flex } from "gpui-base";
-import { panes, focused, props, hc, theme, shared } from "herdr";
+import { panes, focused, props, hc, theme, shared, checking } from "herdr";
 import { switchTo, showView, preferredView, sessionOf, chatKey } from "./common.js";
 import { target, inputBox, interruptAgent } from "./terminal.js";
 import { keyRows, splitCode, withCopyRows, stepRows, stepText, withoutRetracted } from "./model/transcript.js";
@@ -20,6 +20,9 @@ import { Composer } from "./components/composer.js";
 import { SessionReader } from "./components/session-reader.js";
 
 function inputHighlight(cx) {
+  // The component theme's accent and selection as a dimmed accent: selected text, in the chat and in herdr's text boxes, and the
+  // bar the chat's markdown draws behind inline code (in the undimmed accent it covers the text). set_theme restarts every mod
+  // copy, so only when the colours differ.
   const t = theme(), th = cx.theme();
   const rgb = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
   const a = rgb(t.accent), b = rgb(t.surface), k = th.is_dark ? 0.32 : 0.28;
@@ -45,6 +48,8 @@ export default class HerdrChat extends View {
     this.composer = new Composer(this, cx);
     this.width = 900; this.zoom = 1; this.rootPx = 0; this.hudFolded = false;
     this.visit = shared("herdr-chat.visit");
+    // `herdr-app check` (the Nix build runs it) loads the mod for real: no reads, timers or theme changes then.
+    if (checking()) return;
     this.refresh(cx);
     cx.timer.every(1500, cx => inputHighlight(cx));
     cx.timer.every(100, cx => {

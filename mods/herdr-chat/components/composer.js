@@ -1,13 +1,13 @@
 import { div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, Textarea, TextareaState } from "gpui-base";
-import { shared, hc, exec } from "herdr";
+import { shared, hc, exec, checking } from "herdr";
 import { ICONS, sessionOf } from "../common.js";
 import { onWindows, modFile, removeFiles, pruneOld } from "../platform.js";
 import { target, sendMessage, pressKeys, inputBox } from "../terminal.js";
 import { imageStyle, canMirror, withImages, draftPastes, textOfBox, readBack } from "../harnesses/index.js";
 import { savedDraft, storeDraft, keptImages } from "../draft.js";
 import { IMAGE_FILE, attachDir, attachName, ATTACH_DIR, keepSent, sentNames, fetchSent, previewName, previewFile, staleSent, dropSent } from "../images.js";
-import { caretOf, lineMove } from "../model/caret.js";
+import { lineMove } from "../model/caret.js";
 import { COLUMN, icon } from "../ui/primitives.js";
 import { SkillMenu } from "./skill-menu.js";
 import { skillToken } from "../model/skills.js";
@@ -43,12 +43,13 @@ export class Composer {
     if (!globalThis.herdrChatStopKey) {
       globalThis.herdrChatStopKey = cx.bind_keys([{ keystroke: "escape", action: "herdr_chat::Stop", context: "HerdrChatReply > Input" }]);
     }
-    this.menu = new SkillMenu(this);
+    this.menu = new SkillMenu(this, cx);
     this.attachments = []; this.drafts = new Map();
     this.mirror = null; this.mirrorChain = Promise.resolve();
     this.lastMode = shared("herdr-chat.mode"); this.lastModeSession = "";
-    this.pruneCache();
     this.sent = new Set(); this.fetching = new Set();
+    if (checking()) return;
+    this.pruneCache();
     cx.spawn(async cx => { for (const n of await sentNames()) this.sent.add(n); this.sentReady = true; await this.pruneSent(); cx.notify(); });
     cx.timer.every(SENT_PRUNE_EVERY, () => { this.pruneSent(); });
   }
@@ -274,7 +275,7 @@ export class Composer {
   lineKey(dir, cx) {
     // ↑ (dir -1) or ↓ (+1) in the reply box: the skill menu's selection while it's open.
     if (this.menu.move(target(), dir, cx)) return;
-    const { start, end } = caretOf(this.input);
+    const range = this.input.selected_range(), start = Math.min(range.start, range.end), end = Math.max(range.start, range.end);
     const from = dir < 0 ? start : end;
     const goal = this.lineGoal && this.lineGoal.at === from ? this.lineGoal.column : null;
     const { at, column } = lineMove(this.input.value(), from, dir, goal);
