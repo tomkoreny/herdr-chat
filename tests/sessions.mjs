@@ -4,7 +4,7 @@ import { join } from "path";
 import { execFileSync } from "child_process";
 import { stage, MOD } from "./stage.mjs";
 
-const { parseReader, parseReaderInSlices, applyRead, blankSession, readerArgs, embeddedReader, readerFromFolder, compressProgram, compressedReader, readerProgram, batchProgram, splitBatch } = await stage().load("model/session.js");
+const { parseReader, parseReaderInSlices, applyRead, blankSession, readerArgs, embeddedReader, readerFromFolder, compressProgram, compressedReader, readerProgram, batchProgram, splitBatch, quietRead, QUIET_EVERY, REMOTE_IDLE_EVERY } = await stage().load("model/session.js");
 let failed = 0;
 const check = (name, ok) => { console.log(`${ok ? "PASS" : "FAIL"} ${name}`); if (!ok) failed++; };
 const enc = encodeURIComponent;
@@ -66,4 +66,12 @@ let pauses = 0;
 const sliced = await parseReaderInSlices(long, async () => { pauses++; }, -1);
 check("read in slices, an update is the same as read at once", JSON.stringify(sliced) === JSON.stringify(parseReader(long)) && sliced.added.length === 300);
 check("and it pauses between slices", pauses > 0);
+const due = (t, status, since) => JSON.stringify(quietRead(t, status, since));
+check("an idle agent on another machine has its log read every few seconds, since a model switched there changes nothing herdr reports",
+  due({ status: "idle", remote: true }, null, REMOTE_IDLE_EVERY) === '{"card":false,"log":true}' && due({ status: "idle", remote: true }, null, REMOTE_IDLE_EVERY - 1) === "null");
+check("one waiting on its subagents sooner", due({ status: "idle", remote: true }, { agents: [{ id: "A" }] }, QUIET_EVERY) === '{"card":false,"log":true}');
+check("an idle agent here is left to its folder watch", due({ status: "idle", remote: false }, null, 60000) === "null");
+check("a working one has its card read, and its log too on another machine",
+  due({ status: "working", remote: false }, null, QUIET_EVERY) === '{"card":true,"log":false}' && due({ status: "working", remote: true }, null, QUIET_EVERY) === '{"card":true,"log":true}');
+check("a blocked one only its card", due({ status: "blocked", remote: true }, null, QUIET_EVERY) === '{"card":true,"log":false}');
 process.exit(failed ? 1 : 0);

@@ -4,12 +4,11 @@ import { sessionOf, chatKey } from "../common.js";
 import { base64Utf8, onWindows, python } from "../platform.js";
 import { target, agentTargets, readScreen } from "../terminal.js";
 import { supportedNames } from "../harnesses/index.js";
-import { blankSession, parseReaderInSlices, applyRead, readerArgs, embeddedReader, readerFromFolder, compressProgram, compressedReader, readerProgram, batchProgram, splitBatch } from "../model/session.js";
+import { blankSession, parseReaderInSlices, applyRead, readerArgs, embeddedReader, readerFromFolder, compressProgram, compressedReader, readerProgram, batchProgram, splitBatch, quietRead } from "../model/session.js";
 import { livePath, parseLive } from "../model/live.js";
 
 const SESSIONS_KEPT = 32;
 const READ_AFTER = [1000, 4000];
-const QUIET_EVERY = 1500;
 const WAIT_EVERY = 3000;
 const RETRY_AFTER = 5000;
 const STALE_AFTER = 3000, CHECK_AFTER = 300, SILENT_AFTER = 5000;
@@ -106,14 +105,11 @@ export class SessionReader {
     this.facts = now;
     if (first) { this.warm(cx); return; }
     const shown = all.find(t => chatKey(t) === this.key);
-    if ((shown?.status === "working" || shown?.status === "blocked") && at - Math.max(this.shownChangedAt ?? 0, this.quietReadAt ?? 0) >= QUIET_EVERY) {
+    const due = quietRead(shown, this.session.status, at - Math.max(this.shownChangedAt ?? 0, this.quietReadAt ?? 0));
+    if (due) {
       this.quietReadAt = at;
-      if (shown.remote && shown.status === "working") this.read(cx);
-      this.host.card.read(cx, shown);
-    } else if (shown?.remote && this.session.status?.agents?.length && at - Math.max(this.shownChangedAt ?? 0, this.quietReadAt ?? 0) >= QUIET_EVERY) {
-      // An agent waiting on its subagents changes nothing herdr reports, and another machine's logs can't be watched from here.
-      this.quietReadAt = at;
-      this.read(cx);
+      if (due.log) this.read(cx);
+      if (due.card) this.host.card.read(cx, shown);
     }
     const ready = this.dueReads.filter(d => d.at <= at);
     if (!ready.length) return;

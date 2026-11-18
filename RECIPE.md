@@ -115,8 +115,9 @@ Colours come from the active theme; icons are the mod's own SVGs in the theme's 
   (up to 400 entries), and later reads take what was added. Agents are read again whenever herdr
   reports a change in them, whenever the shown agent's log folder changes (the watch on the folder
   shown before is released, since herdr watches at most 64 folders for all mods), and the working
-  agent on screen every 1.5 s. The 32 most recent conversations stay in memory, so switching back
-  is instant.
+  agent on screen every 1.5 s. Another machine's folders can't be watched, so an idle agent there
+  is read every 5 s while it's on screen: a model switched in its terminal changes nothing herdr
+  reports. The 32 most recent conversations stay in memory, so switching back is instant.
 - **Following:** the chat stays at the bottom while you're there, and holds still when you scroll
   up.
 - **Highlight:** selected text, in the chat and in herdr's text boxes, and the bar behind inline

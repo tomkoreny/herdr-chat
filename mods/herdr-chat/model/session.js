@@ -95,6 +95,19 @@ export function applyRead(s, r) {
   } else if (s.note && s.messages.length) s.note = "";
 }
 
+export const QUIET_EVERY = 1500, REMOTE_IDLE_EVERY = 5000;
+
+export function quietRead(t, status, since) {
+  // What the shown agent `t` is due when nothing herdr reports changed, `since` ms after the last such look; null when nothing is.
+  // A working or blocked one has its question card read every QUIET_EVERY, and its log too while it works on another machine,
+  // whose logs can't be watched from here. Another machine's idle agent has its log read every QUIET_EVERY while its subagents
+  // work (from `status`), else every REMOTE_IDLE_EVERY: a model switched there while it's idle changes nothing herdr reports.
+  if (!t) return null;
+  if (t.status === "working" || t.status === "blocked") return since >= QUIET_EVERY ? { card: true, log: Boolean(t.remote) && t.status === "working" } : null;
+  if (!t.remote) return null;
+  return since >= (status?.agents?.length ? QUIET_EVERY : REMOTE_IDLE_EVERY) ? { card: false, log: true } : null;
+}
+
 const REMOTE_TAIL_MB = 6;
 const REMOTE_ENTRIES = 150;
 
