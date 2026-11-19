@@ -82,3 +82,20 @@ export function checkbox(t, checked) {
     .border_color(checked ? t.accent : t.dim).bg(checked ? t.accent : t.background)
     .text_size(9).text_color(t.background).child(checked ? "✓" : "");
 }
+
+export function radio(t, checked) {
+  // A single-choice row's dot.
+  return div().flex_none().size(12).flex().items_center().justify_center().rounded(6).border_1()
+    .border_color(checked ? t.accent : t.dim).bg(t.background)
+    .child(div().size(6).rounded(3).bg(checked ? t.accent : t.background));
+}
+
+export function cardTitle(t, title, folded, about, onToggle) {
+  // A prompt card's title row: its dot and title, what it asks beside them while folded, and the chevron; a click folds or opens the card.
+  return h_flex().id("card-title").gap(8).items_center().cursor_pointer().on_click(onToggle)
+    .child(div().size(7).rounded(4).flex_none().bg(t.blocked))
+    .child(div().flex_none().text_size(12.5).font_semibold().text_color(t.foreground).child(title))
+    .when(folded && Boolean(about), el => el.child(div().flex_1().min_w(0).truncate().text_size(12.5).text_color(t.muted).child(`· ${about}`)))
+    .when(!folded, el => el.child(div().flex_1()))
+    .child(icon(folded ? "chevron-right" : "chevron-down", 14, t.dim));
+}

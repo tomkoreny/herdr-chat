@@ -5,7 +5,8 @@ import { onWindows } from "../platform.js";
 import { target, readPrompt, pressKeys, sendMessage, inputBox } from "../terminal.js";
 import { parsePrompt, looksLikePrompt, keysFor, typedAnswer, sameOption, previewKey, fullPreview } from "../model/prompts.js";
 import { shared } from "herdr";
-import { COLUMN, mono, icon, keyButton, checkbox } from "../ui/primitives.js";
+import { COLUMN, mono, keyButton, checkbox, cardTitle } from "../ui/primitives.js";
+import { AskForm } from "./ask-form.js";
 
 const BODY_HEIGHT = 264;
 const ROW_CHARS = 96;
@@ -33,8 +34,10 @@ function bodyHeight(q) {
 
 export class QuestionCard {
   constructor(host) {
-    // A question on the agent's screen: read, shown as a card, answered with the harness's keys. `host` is the view: its `sending` lock, `note`, `key` and `list`.
+    // A question on the agent's screen: read, shown as a card, answered with the harness's keys. An OMP ask form is shown and answered whole
+    // instead, from the session's log (see AskForm). `host` is the view: its `sending` lock, `note`, `key` and `list`.
     this.host = host;
+    this.form = new AskForm(host);
     this.choices = null; this.screen = ""; this.unread = false; this.currentStep = "";
     this.cardFold = ""; this.cardFolded = false;
     this.rowInputs = {
@@ -48,8 +51,25 @@ export class QuestionCard {
   }
 
   get showing() {
-    // Whether a question or an unparsed prompt is on screen.
-    return Boolean(this.choices || this.unread);
+    // Whether a question, a form or an unparsed prompt is shown.
+    return Boolean(this.choices || this.unread || this.form.visible(target()));
+  }
+
+  notice(cx, t, ask) {
+    // Each tick, with the form the shown session's log says is waiting (the reader's `ask`).
+    this.form.notice(cx, t, ask);
+  }
+
+  formWaits(t) {
+    // Whether an ask form is shown for agent `t`, waiting to be filled in.
+    return this.form.visible(t);
+  }
+
+  async stepAside(t, cx) {
+    // Makes way for a message sent in place of an answer; false when no form is waiting for one.
+    if (!this.form.visible(t)) return false;
+    await this.form.stepAside(t, cx);
+    return true;
   }
 
   clear() {
@@ -223,18 +243,15 @@ export class QuestionCard {
   }
 
   render(t, active) {
-    // The card for a prompt on screen: a question with its choices, or a blocked agent's last lines.
+    // The card for a prompt on screen: a form, a question with its choices, or a blocked agent's last lines.
+    if (this.form.visible(active)) return this.form.render(t, active);
+    if (this.form.settling || this.form.sent) return null;
     const q = active && (active.status === "blocked" || active.status === "working") ? this.choices : null;
     if (active?.status !== "blocked" && !q && !this.unread) return null;
     const fold = q ? JSON.stringify(q.steps.length ? q.steps.map(s => s.label) : q.question) : `screen:${active?.address}`;
     if (fold !== this.cardFold) { this.cardFold = fold; this.cardFolded = false; }
     const title = active.kind === "permission" ? `${active.label} needs permission` : q ? `${active.label} is asking` : `${active.label} needs your input`;
-    const titleRow = h_flex().id("card-title").gap(8).items_center().cursor_pointer().on_click((_e, cx) => this.toggle(cx))
-      .child(div().size(7).rounded(4).flex_none().bg(t.blocked))
-      .child(div().flex_none().text_size(12.5).font_semibold().text_color(t.foreground).child(title))
-      .when(this.cardFolded && Boolean(q?.question.at(-1)), el => el.child(div().flex_1().min_w(0).truncate().text_size(12.5).text_color(t.muted).child(`· ${q.question.at(-1)}`)))
-      .when(!this.cardFolded, el => el.child(div().flex_1()))
-      .child(icon(this.cardFolded ? "chevron-right" : "chevron-down", 14, t.dim));
+    const titleRow = cardTitle(t, title, this.cardFolded, q?.question.at(-1), (_e, cx) => this.toggle(cx));
     if (this.cardFolded) return v_flex().flex_none().w_full().max_w(COLUMN).px(10).py(8).rounded(12).border_1().border_color(t.blocked).bg(t.surface).child(titleRow);
     const key = (id, label, k) => keyButton(t, id, label, (_e, cx) => k === "terminal" ? switchTo("terminal", active ? sessionOf(active) : "") : this.press(k, cx));
     return v_flex().flex_none().w_full().max_w(COLUMN).p(10).gap(7).rounded(12).border_1().border_color(t.blocked).bg(t.surface)

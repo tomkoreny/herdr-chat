@@ -34,9 +34,11 @@ def answer(fd, chunk):
                 pass
 
 
-def drain(fd, quiet, limit):
-    """What the attach prints until it has been quiet for `quiet` seconds (at most `limit`)."""
-    got, start, last = b"", time.time(), None
+def drain(fd, quiet, limit, busy=None):
+    """What the attach prints until it has been quiet for `quiet` seconds (at most `limit`). With `busy`, a screen that never pauses (OMP
+    redraws a waiting question some 30 times a second) is given that long from where its paint began in earnest, past the attach's opening
+    questions, and no longer."""
+    got, start, last, began = b"", time.time(), None, None
     while time.time() - start < limit:
         ready, _, _ = select.select([fd], [], [], 0.03)
         if ready:
@@ -48,7 +50,11 @@ def drain(fd, quiet, limit):
                 break
             answer(fd, chunk)
             got, last = got + chunk, time.time()
+            if began is None and len(got) > 256:
+                began = last
         elif last is not None and time.time() - last >= quiet:
+            break
+        if busy is not None and began is not None and time.time() - began >= busy:
             break
     return got
 
@@ -292,6 +298,25 @@ def paste(terminal, text):
     type_into(terminal, 0, [text])
 
 
+def write(terminal, chunks):
+    """One attach: each chunk typed as it is (keys as the bytes a terminal sends, a paste inside its brackets), the program given time to
+    take it in before the next: until its paint pauses, or a moment where it never does (longer on another machine, whose paint comes in
+    bursts)."""
+    rows, cols = size(terminal)
+    pid, fd = attach(terminal, False, rows, cols)
+    away = "/" in terminal
+    if not drain(fd, quiet_for(terminal), 4.0, 1.0 if away else 0.3):
+        detach(pid, fd)
+        sys.exit("hc attach printed nothing")
+    quiet, limit = (0.2, 0.5) if away else (0.05, 0.15)
+    for chunk in chunks:
+        data = chunk.encode()
+        while data:
+            data = data[os.write(fd, data):]
+        drain(fd, quiet, limit)
+    detach(pid, fd)
+
+
 def tall(terminal, hidden):
     """The screen with `hidden` more rows, for a moment: an attach at that height, and back as soon as nothing is cut."""
     rows, cols = size(terminal)
@@ -334,6 +359,8 @@ def main():
         type_into(sys.argv[2], 200, [sys.argv[3]])
     elif cmd == "paste":
         paste(sys.argv[2], sys.argv[3])
+    elif cmd == "write":
+        write(sys.argv[2], json.loads(sys.argv[3]))
     elif cmd == "set":
         terminal, shape, pastes = sys.argv[2], json.loads(sys.argv[3]), [p for p in json.loads(sys.argv[4]) if p]
         now = read(terminal, shape)

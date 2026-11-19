@@ -46,7 +46,7 @@ export default class HerdrChat extends View {
     this.reader = new SessionReader(this);
     this.card = new QuestionCard(this);
     this.composer = new Composer(this, cx);
-    this.width = 900; this.zoom = 1; this.rootPx = 0; this.hudFolded = false;
+    this.width = 900; this.height = 800; this.zoom = 1; this.rootPx = 0; this.rootHeightPx = 0; this.hudFolded = false;
     this.visit = shared("herdr-chat.visit");
     // `herdr-app check` (the Nix build runs it) loads the mod for real: no reads, timers or theme changes then.
     if (checking()) return;
@@ -60,6 +60,7 @@ export default class HerdrChat extends View {
       this.reader.noticeAgents(cx);
       this.composer.previewsFor(t, this.reader.session.messages, cx);
       this.composer.menu.warm(t, this.reader.session.path, cx);
+      this.card.notice(cx, t, this.reader.session.status?.ask);
       if (t) this.card.showPreview(cx, t);
       this.noticeVisit();
       const cue = this.reader.readCue();
@@ -259,8 +260,17 @@ export default class HerdrChat extends View {
     });
     return v_flex().id("herdr-chat-root").relative().size_full().min_h(0).rounded(10).border_1().border_color(t.border)
       .bg(t.background).text_color(t.foreground)
-      .on_size_change((size, cx) => { this.rootPx = size.width; const w = designPx(size.width, this.zoom); if (w >= 200 && Math.abs(w - this.width) > 8) { this.width = w; cx.notify(); } })
-      .child(zoomProbe((zoom, cx) => { if (Math.abs(zoom - this.zoom) > 0.001) { this.zoom = zoom; if (this.rootPx) this.width = designPx(this.rootPx, zoom); cx.notify(); } }))
+      .on_size_change((size, cx) => {
+        this.rootPx = size.width; this.rootHeightPx = size.height;
+        const w = designPx(size.width, this.zoom), h = designPx(size.height, this.zoom);
+        if ((w >= 200 && Math.abs(w - this.width) > 8) || Math.abs(h - this.height) > 8) { if (w >= 200) this.width = w; this.height = h; cx.notify(); }
+      })
+      .child(zoomProbe((zoom, cx) => {
+        if (Math.abs(zoom - this.zoom) < 0.001) return;
+        this.zoom = zoom;
+        if (this.rootPx) { this.width = designPx(this.rootPx, zoom); this.height = designPx(this.rootHeightPx, zoom); }
+        cx.notify();
+      }))
       .on_drop((e, cx) => this.composer.dropFiles(e.paths ?? [], cx))
       .child(this.header(t, active))
       .when(empty && /^Opening/.test(this.note || ""), el => el.child(this.placeholder(t)))

@@ -163,7 +163,8 @@ export class SkillMenu {
         .on_action("herdr_chat::PickClose", (_e, cx) => this.dismiss(active, cx))
         .child(Input.new(this.search).w_full().h(30).px(10).rounded(9).border_1().border_color(t.border).bg(t.background).text_size(13))))
       .when(!v.items.length, el => el.child(div().w_full().h(ROW).px(10).flex().items_center().text_size(12.5).text_color(t.dim).child("Nothing matches")))
-      .child(v_flex().id("skill-menu-list").w_full().max_h(ROWS * ROW).overflow_y_scrollbar().track_scroll(this.scroll)
+      // A height of its own, not a maximum: an area that is only capped doesn't scroll.
+      .child(v_flex().id("skill-menu-list").w_full().h(Math.min(ROWS, v.items.length) * ROW).overflow_y_scrollbar().track_scroll(this.scroll)
         .children(v.items.map((s, at) => {
           const chosen = at === this.index, now = v.kind === "pick" && s.name === v.current;
           return h_flex().id(`${v.kind}-${s.name}`).w_full().h(ROW).flex_none().px(10).gap(12).items_center().rounded(9).cursor_pointer().border_1().border_color(chosen ? t.accent : "#00000000")

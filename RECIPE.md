@@ -85,16 +85,27 @@ Colours come from the active theme; icons are the mod's own SVGs in the theme's 
 - **Questions:** when an agent asks a question with choices, the card lists them: ↑↓ move, Enter
   or a click answers, multi-select questions tick rows, multi-step questions step through, and
   Claude Code's previews show beside the options. The card folds to one line. Each key is sent
-  only while the screen still shows the same question. OMP's ask form, which shows all its fields
-  at once, is read a field at a time (`prompt.form: "fields"`): picking a radio button moves to the
-  next field (a one-field form seen whole is sent at once; a tall form is paged, its page in the
-  box's title, and never sent by a pick), checkboxes tick, a select steps through its values, text,
-  numbers, empty textareas and "Other" answers are typed in the card (replacing what the field held,
-  or clearing it when emptied; a textarea holding text is kept from the card and changed in the
-  terminal, as clearing reaches one line), a picture shows as a line pointing to the terminal, and on Submit the
-  card lists the answers to send or change. The screen is judged on its last 4000 characters after
-  each line's end padding is dropped and a picture's cells become one word. Other prompts show the
-  screen's last lines with key buttons.
+  only while the screen still shows the same question. The screen is judged on its last 4000
+  characters after each line's end padding is dropped and a picture's cells become one word. Other
+  prompts show the screen's last lines with key buttons.
+- **OMP's ask form:** the card shows the whole form as OMP wrote it: its text, lists, tables and
+  pictures (copied from the agent's machine), and every field at once, radio buttons and checkboxes
+  as rows with OMP's own "Other" answer, a `<select>` as rows too, inputs and textareas as text
+  boxes. It's filled in in the card and sent with Submit, after the checks OMP makes on Submit; a
+  form of one radio question is sent by picking its answer. A form half filled in is kept while
+  another session is shown. The form comes from the session's log (`prompt.form: "log"`: the
+  reader's `ask` is the waiting call's HTML, which `model/ask-html.js` reads as OMP's own parser
+  does), not off the screen, so it's the same whichever OMP drew it. The answers go into the form
+  in OMP's terminal, typed there through `hc attach` (`model/ask-form.js`): every field is set to
+  what the card shows, whatever the terminal's form held, and Submit is pressed only once the
+  form's cursor has reached it. Checkboxes can only be flipped, so each group's boxes are read off
+  the screen first, with the cursor on the group's last stop (where OMP 19, which folds every
+  field but the one in focus, shows it whole) and only from rows that carry the group's own
+  labels. OMP redraws a waiting question some 30 times a second, so the screen never pauses: the
+  keys go in as few writes as the form allows, each given a moment rather than a quiet screen,
+  and what's read back is read again when it predates them. OMP 18.22 and 19 take the same keys.
+  A message sent from the reply box while a form waits is sent in place of an answer (Esc first,
+  so it isn't typed into the form). On Windows the card shows the screen's last lines instead.
 - **Skills and commands:** typing `/` (also `$` on Codex, `@` on OpenCode) opens the agent's
   skills, a list that scrolls with the wheel or ↑↓: ↑↓ choose, Enter or Tab insert, Esc closes. OMP
   lists all its slash commands instead, as its RPC mode reports them (`omp --mode rpc --no-session`,
@@ -137,14 +148,14 @@ the terminal itself belongs to the layout. The same mod runs twice: as the chat
 | `main.js` | the chat view: sessions, timers, header, list, card and composer, Stop |
 | `header.js` | the terminal pane header with the toggle |
 | `common.js` | session keys, each session's view, `layout.select` |
-| `components/` | `chat-list.js` (rows, measuring, following), `question-card.js`, `composer.js` (reply box, drafts, images, sending, status line), `session-reader.js` (reading and keeping conversations), `skill-menu.js` (skills, commands and their choices) |
-| `model/` | pure data, free of gpui and herdr imports: transcript folding, session state, status line, the to-do list and subagents card, the live activity, prompt parsing, caret, hash |
+| `components/` | `chat-list.js` (rows, measuring, following), `question-card.js`, `ask-form.js` (OMP's ask form, filled in and sent), `composer.js` (reply box, drafts, images, sending, status line), `session-reader.js` (reading and keeping conversations), `skill-menu.js` (skills, commands and their choices) |
+| `model/` | pure data, free of gpui and herdr imports: transcript folding, session state, status line, the to-do list and subagents card, the live activity, prompt parsing, OMP's ask form (its HTML read, and the keys that fill it in), caret, hash |
 | `ui/` | `primitives.js` (icons, buttons, badges, toggle), `rows.js` (each conversation row), `hud.js` (the to-do list and subagents card) and `live.js` (the live activity under the working spark) |
 | `harnesses/` | one adapter per agent: label, image style, drafts, prompt options, input box, skills, reader. All agent-specific behaviour lives here |
 | `readers/` | the session reader in Python 3.6+, one file per agent beside `common.py` and `main.py`, joined in `manifest.json` order |
 | `terminal.js`, `platform.js` | the target agent and its screen; Windows and Unix differences |
 | `images.js`, `prepare-image.sh` / `.ps1` | image previews: where they go, shrinking, the clipboard |
-| `input-box.py`, `send.ps1` | the agent's own input box through `hc attach` (Linux and macOS); sending on Windows |
+| `input-box.py`, `send.ps1` | the agent's own input box, and keys typed as a terminal sends them, through `hc attach` (Linux and macOS); sending on Windows |
 | `diagrams.js`, `vendor/pele/` | mermaid through [Pele](https://github.com/obsidianmd/pele), pinned in `package.json` and copied into `vendor/` |
 | `icons/` | the mod's SVG icons |
 
@@ -217,7 +228,9 @@ agent is doing right now in `<session>/__live.json` beside its log (see Adding a
   latest of each and adds up each read's `cost`. OMP's reader follows OMP's own rules: the default
   role's model, the context as `calculateContextTokens` counts it, reset by a compaction. For the
   card above the reply box it also sets `todo` (the entry that set the list, and its phases, rebuilt
-  as `canonicalTodoPhases` does), `todoHud` (the entry OMP's TUI dismissed or revealed) and, on
+  as `canonicalTodoPhases` does), `todoHud` (the entry OMP's TUI dismissed or revealed), `ask` (the
+  ask call waiting for an answer: its id and its form's HTML; None once its result, the person's
+  message or a later reply ends the wait) and, on
   every read, `agents`: the subagents in their own logs (`<session>/<id>.jsonl`, not OMP's `__` side
   logs) whose latest message isn't a reply that ended their turn (OMP writes `session_exit` only
   minutes later) and that began after the OMP in the terminal started, since one an earlier OMP left
@@ -234,8 +247,8 @@ agent is doing right now in `<session>/__live.json` beside its log (see Adding a
 
 - The chat shows the last 24 MB of each session log.
 - On Windows, the draft lives in the reply box, a question card shows long previews in part with a
-  count of the remaining lines, a multi-select's own-answer row is typed in the terminal, and Codex
-  receives a pasted image as its path.
+  count of the remaining lines, a multi-select's own-answer row is typed in the terminal, OMP's ask
+  form shows as the screen's last lines, and Codex receives a pasted image as its path.
 - OpenCode is read from its `session_v2` tables.
 
 ## Done when
@@ -250,6 +263,8 @@ agent is doing right now in `<session>/__live.json` beside its log (see Adding a
 - An agent on another machine shows its conversation the same way.
 - A pasted screenshot shows as a thumbnail and reaches the agent as an image.
 - A question with choices shows as a card, and answering it in the chat answers it in the terminal.
+- An OMP ask form shows whole in the card, and Submit there submits it in the terminal with the
+  answers the card shows (OMP 18.22 or 19).
 - A mermaid block shows as a diagram in the theme's colours.
 - On OMP, `/` lists its commands, `/effort ` offers its levels, and picking a model in the status
   line switches the session's model, which the line shows once OMP has logged it.

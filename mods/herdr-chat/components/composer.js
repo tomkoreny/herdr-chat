@@ -314,7 +314,9 @@ export class Composer {
     };
     cx.spawn(async cx => {
       try {
-        if (t.status === "blocked" && !(await this.host.card.stillCurrent(t))) throw new Error("The prompt changed. Review it again before answering.");
+        // With an ask form waiting, the message is sent in place of an answer, not typed into the form.
+        if (t.status === "blocked" && !(await this.host.card.stepAside(t, cx)) && !(await this.host.card.stillCurrent(t)))
+          throw new Error("The prompt changed. Review it again before answering.");
         if (canMirror(t.harness) && t.status !== "blocked") {
           await this.mirrorChain;
           if (this.mirror?.session === sessionOf(t) && this.mirror.foreign)
@@ -369,7 +371,9 @@ export class Composer {
     if (!active) return hint.child("");
     const switches = active.harness.status ?? {};
     const parts = statusParts(status, this.menu.command(active, switches.model)?.choices);
-    if (!parts) return hint.child(`Sends to the live ${active.label} terminal · drop or paste an image to attach it`);
+    // While an ask form waits, a message isn't an answer to it.
+    const instead = this.host.card.formWaits(active) ? "A message here is sent in place of the form's answers" : "";
+    if (!parts) return hint.child(instead || `Sends to the live ${active.label} terminal · drop or paste an image to attach it`);
     const chip = (id, label, command, current) => {
       const can = Boolean(command && this.menu.command(active, command)?.choices?.length) && active.status !== "blocked";
       return h_flex().id(id).flex_none().h(22).px(7).gap(3).items_center().rounded(6).text_color(t.muted)
@@ -383,7 +387,7 @@ export class Composer {
       .when(Boolean(parts.model), el => el.child(chip("status-model", parts.model, switches.model, parts.modelId)))
       .when(Boolean(parts.effort), el => el.child(chip("status-effort", parts.effort, switches.effort, parts.effortId)))
       .when(Boolean(facts), el => el.child(div().flex_none().px(7).child(facts)))
-      .child(div().flex_1().min_w(0).truncate().text_right().child(`Sends to the live ${active.label} terminal · drop or paste images`));
+      .child(div().flex_1().min_w(0).truncate().text_right().child(instead || `Sends to the live ${active.label} terminal · drop or paste images`));
   }
 
   render(t, active, status) {

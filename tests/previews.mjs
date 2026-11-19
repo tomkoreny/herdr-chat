@@ -4,13 +4,20 @@ import { join } from "path";
 import { stage } from "./stage.mjs";
 
 const s = stage();
-const { previewName, previewFile, keepSent, sentNames, staleSent, dropSent } = await s.load("images.js");
+const { previewName, previewFile, keepSent, sentNames, staleSent, dropSent, imageSize } = await s.load("images.js");
 let failed = 0;
 const check = (name, got, want) => {
   const ok = JSON.stringify(got) === JSON.stringify(want);
   console.log(`${ok ? "PASS" : "FAIL"} ${name}${ok ? "" : `: got ${JSON.stringify(got)}`}`);
   if (!ok) failed++;
 };
+const png = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 4, 176, 0, 0, 4, 126, 8, 6, 0, 0, 0]);
+const gif = new Uint8Array([71, 73, 70, 56, 57, 97, 0x40, 0x01, 0xf0, 0x00, 0, 0, 0]);
+// A JPEG whose size comes after another segment (APP0) and its table (DHT), in a start-of-frame segment: height first, then width.
+const jpeg = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0, 4, 1, 2, 0xff, 0xc4, 0, 5, 9, 9, 9, 0xff, 0xc2, 0, 11, 8, 0x02, 0x58, 0x03, 0x20, 3, 1, 2, 3, 4]);
+check("a picture's size is read from its PNG, GIF or JPEG header, and no size from anything else",
+  [imageSize(png), imageSize(gif), imageSize(jpeg), imageSize(new Uint8Array([60, 115, 118, 103, 62])), imageSize(new Uint8Array([0xff, 0xd8, 0xff]))],
+  [{ width: 1200, height: 1150 }, { width: 320, height: 240 }, { width: 800, height: 600 }, null, null]);
 const placed = (t, name) => `/home/a/.local/state/herdr-core/default/files/${t}/${name}`;
 
 check("a preview name says where the image was placed", previewName(placed("t4k", "same.png")), "local~t4k~same.png");

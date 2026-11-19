@@ -150,8 +150,9 @@ def omp_status(o):
     the thinking level chosen (`effort`, such as auto) and the one in force (`level`), the tokens the
     context held after the latest reply or compaction (`context`, None when unknown), what the replies
     read here cost (`cost`, which the chat adds to what earlier reads found), the to-do list (`todo`: the
-    entry that set it, and its phases) and whether OMP's TUI hid it (`todoHud`: the entry it judged, and
-    `dismissed` or `revealed`)."""
+    entry that set it, and its phases), whether OMP's TUI hid it (`todoHud`: the entry it judged, and
+    `dismissed` or `revealed`) and the ask call that waits for an answer (`ask`, see omp_ask; None once its
+    result, the person's message or a later reply ends the wait)."""
     m, kind, seen = o.get("message") or {}, o.get("type"), {}
     if kind == "model_change" and o.get("model"):
         role = o.get("role") or "default"
@@ -171,9 +172,22 @@ def omp_status(o):
     elif kind == "custom" and o.get("customType") == "todo_hud_state":
         d = o.get("data") or {}
         seen["todoHud"] = {"id": str(d.get("sourceEntryId") or ""), "visibility": str(d.get("visibility") or "")}
+    if kind == "message":
+        calls = [c for c in m.get("content") or [] if isinstance(c, dict) and c.get("type") == "toolCall" and c.get("name") == "ask"] if m.get("role") == "assistant" else []
+        if calls: seen["ask"] = omp_ask(calls[-1])
+        elif m.get("role") in ("assistant", "user") or m.get("toolName") == "ask": seen["ask"] = None
     phases = omp_todo(o)
     if phases is not None: seen["todo"] = {"id": str(o["id"]), "phases": phases}
     if seen: state["status"] = dict(state["status"] or {}, **seen)
+
+def omp_ask(call):
+    """An ask call as the chat draws and answers it (model/ask-html.js): its id with its `html`, a bare string
+    counted, or with the older `questions` list OMP still takes; None for a call with neither."""
+    asked = call.get("arguments")
+    html = asked if isinstance(asked, str) else asked.get("html") if isinstance(asked, dict) else None
+    if isinstance(html, str): return {"id": str(call.get("id") or ""), "html": html}
+    questions = asked.get("questions") if isinstance(asked, dict) else None
+    return {"id": str(call.get("id") or ""), "questions": questions} if isinstance(questions, list) and questions else None
 
 def omp_todo(o):
     """The to-do list an entry sets, as OMP rebuilds it (canonicalTodoPhases): a todo call's result (not a

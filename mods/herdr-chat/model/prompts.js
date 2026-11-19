@@ -70,14 +70,14 @@ export function fullPreview(harness, screen, shown) {
 }
 
 export function parsePrompt(harness, screen) {
-  // The prompt on an agent's screen, read the way its harness draws it.
-  return harness?.prompt?.form === "fields" ? parseFieldForm(screen) : parseChoices(screen, harness?.prompt ?? {});
+  // The prompt on an agent's screen, read the way its harness draws it. None for a harness whose form comes from its log (OMP's ask, see
+  // ask-form.js): its other prompts show as the screen's last lines.
+  return harness?.prompt?.form === "log" ? null : parseChoices(screen, harness?.prompt ?? {});
 }
 
 export function keysFor(harness, prompt, index) {
-  // The keys that act on one option: the ones its reading gave it, its number where the harness takes one, else arrows from the selected one and Enter.
+  // The keys that act on one option: its number where the harness takes one, else arrows from the selected one and Enter.
   const option = prompt.options[index];
-  if (option.keys) return option.keys;
   if (harness?.prompt?.byNumber) return option.next ? ["tab"] : [String(option.n)];
   if (option.next && option.hidden) return ["right"];
   return [...moves(prompt, index), "enter"];
@@ -95,9 +95,8 @@ export function sameOption(a, b) {
 }
 
 export function typedAnswer(harness, prompt, index) {
-  // The keys that put the cursor in a text row, ready for a typed answer: the ones its reading gave it (which also clear what the row holds), else the harness's.
+  // The keys that put the cursor in a text row, ready for a typed answer.
   const option = prompt.options[index];
-  if (option.before) return { before: option.before };
   const { byNumber, notes } = harness?.prompt ?? {};
   const to = byNumber ? [String(option.n)] : moves(prompt, index);
   if (option.input === "chat") return { before: [...to, "enter"] };
@@ -215,108 +214,4 @@ export function parseChoices(shown, { byNumber = false, columns = false } = {}) 
   if (review) question.splice(0, question.length, "Review your answers");
   const sig = JSON.stringify([question, multi ? "multi" : options.map(o => o.input ? "" : o.label)]);
   return { question, tabs, steps: stepsOf(tabs), review, options, multi, more, preview, sig };
-}
-
-const FIELD_ROW = /^(\s*)((?:\uF054|❯|>)\s+)?(\uF192|\uF10C|\uF14A|\uF096|◉|○|☑|☐|\(o\)|\( \)|\[x\]|\[ \])\s+(\S.*)$/;
-const FIELD_MARKS = { "\uF192": [true, false], "◉": [true, false], "(o)": [true, false], "\uF10C": [false, false], "○": [false, false], "( )": [false, false],
-  "\uF14A": [true, true], "☑": [true, true], "[x]": [true, true], "\uF096": [false, true], "☐": [false, true], "[ ]": [false, true] };
-const FIELD_SUBMIT = /^\s*((?:\uF054|❯|>)\s+)?Submit$/;
-const FIELD_OTHER = /^Other:\s*(.*)$/;
-const FIELD_CURSOR = /^(?:\uF054|❯|>)\s+/;
-const FIELD_VALUE = /^\s+│ ?(.*)$/;
-const FIELD_SELECT = /^‹ (.*) ›\s+(\d+)\/(\d+)$/;
-const CLEAR_LINE = ["ctrl+a", "ctrl+k"];
-const PICTURE = "[A picture: open the terminal to see it]";
-
-export function parseFieldForm(shown) {
-  // A form whose fields all show at once (OMP's ask), above a Submit row, with one cursor (nerd, unicode or ascii symbols). A field is radio buttons or
-  // checkboxes (each with an "Other:" row typed in place), or a value under its label: text, a number, a textarea, or a select stepped through as ‹ value ›.
-  // Read as the field the cursor is in, or, with the cursor on Submit, a review of the answers. Its keys: Enter picks a radio button and moves to the next
-  // field (or Submit, which a form seen whole with one field then presses too: a tall form is paged, its page in the box's title), Space ticks a checkbox,
-  // Enter leaves any other field, ← and → step a select, and text goes in where the cursor is, after Ctrl+A Ctrl+K clears what was there (an emptied
-  // answer is the clear and Enter). Those clear one line, so a textarea that holds text is kept or changed in the terminal. A picture shows as a line
-  // saying it's in the terminal.
-  const lines = screenLines(shown);
-  let end = lines.length - 1;
-  while (end >= 0 && !lines[end].trim()) end--;
-  const footer = findFooter(lines, end);
-  if (footer < 0) return null;
-  let top = footer;
-  while (top > 0 && !/^\s*╭/.test(lines[top - 1])) top--;
-  const title = top > 0 ? lines[top - 1] : "", boxed = /^\s*╭/.test(title), page = /·\s*(\d+)\/(\d+)/.exec(title);
-  const fields = [], intro = [];
-  let run = [], field = null, submit = false;
-  for (const line of lines.slice(top, footer)) {
-    if (/^\s*├/.test(line)) continue;
-    const row = FIELD_ROW.exec(line), value = FIELD_VALUE.exec(line), done = FIELD_SUBMIT.exec(line);
-    if (row) {
-      if (field?.kind !== "choice") {
-        field = { kind: "choice", label: run.map(r => r.text).join(" "), rows: [] };
-        fields.push(field);
-        run = [];
-      }
-      const [checked, box] = FIELD_MARKS[row[3]], other = FIELD_OTHER.exec(row[4].trim());
-      field.box = box;
-      field.rows.push({ label: row[4].trim(), checked, here: Boolean(row[2]), other: other ? (other[1].trim() === "type your own" ? "" : other[1].trim()) : null });
-    } else if (value) {
-      if (field?.kind !== "value") {
-        const head = run.pop();
-        if (!fields.length) intro.push(...run.map(r => r.text));
-        field = { kind: "value", label: head?.text ?? "", here: Boolean(head?.here), lines: [] };
-        fields.push(field);
-        run = [];
-      }
-      field.lines.push(value[1].trimEnd());
-    } else if (done) { submit = Boolean(done[1]); field = null; run = []; }
-    else if (!line.trim()) { if (!field && !fields.length && run.length) { intro.push(...run.map(r => r.text)); run = []; } field = null; }
-    else if (field?.kind === "choice" && /^\s{4,}\S/.test(line)) field.rows.at(-1).label += ` ${line.trim()}`;
-    else if (line.trim() === "[picture]") { field = null; if (run.at(-1)?.text !== PICTURE) run.push({ text: PICTURE, here: false }); }
-    else { field = null; run.push({ text: line.replace(FIELD_CURSOR, "").trim(), here: FIELD_CURSOR.test(line) }); }
-  }
-  if (!fields.length) return null;
-  for (const f of fields.filter(f => f.kind === "value")) {
-    const select = f.lines.length === 1 ? FIELD_SELECT.exec(f.lines[0].trim()) : null;
-    f.select = select ? { value: select[1], at: Number(select[2]), of: Number(select[3]) } : null;
-    f.text = f.lines.join("\n").trim();
-  }
-  const answerOf = f => f.kind === "choice" ? f.rows.filter(r => r.checked).map(r => r.other ?? r.label).join(", ") : f.select ? f.select.value : f.text;
-  const current = fields.findIndex(f => f.kind === "choice" ? f.rows.some(r => r.here) : f.here);
-  const base = { tabs: null, steps: [], review: null, more: false, preview: null };
-  const where = page ? [`Page ${page[1]} of ${page[2]}`] : [];
-  if (current < 0) {
-    if (!submit) return null;
-    const answers = fields.map(f => ({ question: f.label, answer: answerOf(f) }));
-    const question = [...intro, ...where, "Send these answers?"];
-    return { ...base, question, review: { answers, warning: "" }, multi: false, sig: JSON.stringify([question, answers]), options: [
-      { n: 1, label: "Send", desc: [], selected: true, keys: ["enter"] },
-      { n: 2, label: "Change an answer", desc: [], selected: false, keys: ["up"] },
-    ] };
-  }
-  const f = fields[current], only = fields.length === 1 && boxed && !page;
-  const question = [...intro, ...where, fields.length === 1 ? f.label : `${f.label} (${current + 1} of ${fields.length})`];
-  if (f.kind === "value" && f.select) return { ...base, question, multi: true, sig: JSON.stringify([question, "select"]), options: [
-    { n: 1, label: f.select.value, desc: [`${f.select.at} of ${f.select.of}`], selected: true, keys: ["enter"] },
-    { n: 2, label: "Next choice", desc: [], selected: false, keys: ["right"] },
-    { n: 3, label: "Previous choice", desc: [], selected: false, keys: ["left"] },
-  ] };
-  if (f.kind === "value" && f.lines.length > 1 && f.text) return { ...base, question: [...question.slice(0, -1), ...f.text.split("\n"), question.at(-1)], multi: false,
-    sig: JSON.stringify([question, "area"]), options: [
-      { n: 1, label: "Keep it as it is", desc: ["To change it, open the terminal: the card can't replace several lines"], selected: true, keys: ["enter"] },
-    ] };
-  if (f.kind === "value") return { ...base, question, multi: false, sig: JSON.stringify([question, "text"]), options: [
-    { n: 1, label: f.text || "Type an answer", desc: [], selected: true, input: "text", typed: f.text, before: CLEAR_LINE, keys: [...CLEAR_LINE, "enter"] },
-  ] };
-  const at = f.rows.findIndex(r => r.here);
-  const arrows = i => Array(Math.abs(i - at)).fill(i > at ? "down" : "up");
-  const options = [];
-  f.rows.forEach((r, i) => {
-    if (f.box && r.other !== null) return;
-    const o = { n: i + 1, label: r.other !== null ? r.other || "Type your own answer" : r.label, desc: [], selected: r.here };
-    if (f.box) Object.assign(o, { checked: r.checked, keys: [...arrows(i), "space"] });
-    else if (r.other !== null) Object.assign(o, { input: "text", typed: r.other, before: [...arrows(i), ...CLEAR_LINE], keys: [...arrows(i), ...CLEAR_LINE, "enter"] });
-    else o.keys = [...arrows(i), "enter", ...(only ? ["enter"] : [])];
-    options.push(o);
-  });
-  if (f.box) options.push({ n: null, label: "Next", desc: [], selected: false, next: true, keys: ["enter"] });
-  return { ...base, question, options, multi: Boolean(f.box), sig: JSON.stringify([question, f.box ? "multi" : options.map(o => o.input ? "" : o.label)]) };
 }

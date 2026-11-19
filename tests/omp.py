@@ -52,7 +52,7 @@ write([
 first = read()
 check("a fresh read reports the default role's model (not the advisor's), the level chosen and the one in force, the context as OMP counts it "
       "(less the provider's orchestration, not from an aborted reply), and what the replies cost (not side work like titles)",
-      status(first), {"model": "anthropic/claude-opus-5-5", "localModel": "", "level": "high", "effort": "auto", "inferredModel": "anthropic/claude-opus-5-5", "context": 1000, "cost": 0.375})
+      status(first), {"model": "anthropic/claude-opus-5-5", "localModel": "", "level": "high", "effort": "auto", "inferredModel": "anthropic/claude-opus-5-5", "context": 1000, "cost": 0.375, "ask": None})
 check("and starts the chat over", ("RESET", []) in first, True)
 offset = next(int(f[0]) for tag, f in first if tag == "OFFSET")
 leaf = next(f[0] for tag, f in first if tag == "LEAF")
@@ -65,7 +65,7 @@ write([
 ], "a")
 more = read(offset, leaf)
 check("a later read reports only what it saw: the switch, the context the provider counted, and its own cost",
-      status(more), {"model": "openai-codex/gpt-5.5", "localModel": "", "inferredModel": "openai-codex/gpt-5.5", "context": 2100, "cost": 0.5})
+      status(more), {"model": "openai-codex/gpt-5.5", "localModel": "", "inferredModel": "openai-codex/gpt-5.5", "context": 2100, "cost": 0.5, "ask": None})
 check("without starting over", ("RESET", []) in more, False)
 offset = next(int(f[0]) for tag, f in more if tag == "OFFSET")
 check("a read with nothing new reports no status", status(read(offset, "b3")), None)
@@ -114,6 +114,30 @@ check("a view or a failed call leaves the list as it was, and OMP's TUI hiding i
       (hidden["todo"]["id"], hidden["todoHud"]), ("d2", {"id": "d2", "visibility": "dismissed"}))
 write([{"type": "custom", "customType": "user_todo_edit", "id": "d6", "parentId": "d5", "data": {"phases": [phase("Mine", ("Edit by hand", "in_progress"))]}}], "a")
 check("the person's own edit replaces the list", status(read())["todo"], {"id": "d6", "phases": [{"name": "Mine", "tasks": [{"content": "Edit by hand", "status": "in_progress"}]}]})
+
+def asking(id, parent, call, arguments):
+    return {"type": "message", "id": id, "parentId": parent, "message": {"role": "assistant", "content": [
+        {"type": "toolCall", "id": call, "name": "ask", "arguments": arguments}]}}
+ship = '<form><label><input type="radio" name="go" value="yes" checked> Yes</label><label><input type="radio" name="go" value="no"> No</label></form>'
+write([asking("q1", "d6", "ask1", {"i": "Asking", "html": ship})], "a")
+waits = read()
+check("a reply that calls ask reports the call that waits for an answer: its id and its form's HTML", status(waits)["ask"], {"id": "ask1", "html": ship})
+offset = next(int(f[0]) for tag, f in waits if tag == "OFFSET")
+write([{"type": "message", "id": "q2", "parentId": "q1", "message": {"role": "toolResult", "toolCallId": "ask1", "toolName": "ask", "content": said("User answers")}}], "a")
+answered = read(offset, "q1")
+check("the call's result ends the wait", status(answered), {"ask": None})
+offset = next(int(f[0]) for tag, f in answered if tag == "OFFSET")
+write([asking("q3", "q2", "ask2", ship), {"type": "message", "id": "q4", "parentId": "q3", "message": {"role": "user", "content": said("never mind")}}], "a")
+skipped = read(offset, "q2")
+check("as does a message the person sends instead of answering", status(skipped), {"ask": None})
+offset = next(int(f[0]) for tag, f in skipped if tag == "OFFSET")
+questions = [{"id": "db", "question": "Which?", "options": [{"label": "SQLite"}]}]
+write([asking("q5", "q4", "ask3", {"i": "Asking", "questions": questions})], "a")
+older = read(offset, "q4")
+check("a call in the older shape is passed on with its questions", status(older)["ask"], {"id": "ask3", "questions": questions})
+offset = next(int(f[0]) for tag, f in older if tag == "OFFSET")
+write([asking("q6", "q5", "ask4", {"i": "Asking"})], "a")
+check("a call with nothing to ask waits on nothing", status(read(offset, "q5")), {"ask": None})
 
 import time
 from datetime import datetime, timezone

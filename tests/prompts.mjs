@@ -172,66 +172,12 @@ check("Codex: a permission prompt keeps its command", codexPerm?.options.length 
 check("a footer with unreadable choices still looks like a prompt", read(claudeCode, "claude-trust") === null && looksLikePrompt(screen("claude-trust")));
 check("an agent's idle screen is no prompt", !looksLikePrompt("› Ask Codex to do anything\n\n  GPT · medium\n  ? for shortcuts"));
 
-const ompRead = name => parsePrompt(omp, promptText(readFileSync(new URL(`fixtures/prompts/omp-${name}.txt`, import.meta.url), "utf8")));
-const ompKeys = (p, label) => keysFor(omp, p, p.options.findIndex(o => o.label === label));
-const oneField = ompRead("q1-down");
-check("OMP: a one-field question reads its legend and choices, the cursor's selected",
-  JSON.stringify([oneField.question, oneField.options.map(o => [o.label, o.selected])]) === JSON.stringify([["Pick a fruit"], [["Apple", false], ["Banana", true], ["Cherry", false], ["Type your own answer", false]]]));
-check("OMP: a choice is picked with Enter, and a one-field form sent with Enter again", JSON.stringify([ompKeys(oneField, "Banana"), ompKeys(oneField, "Apple")]) === JSON.stringify([["enter", "enter"], ["up", "enter", "enter"]]));
-const own = oneField.options.findIndex(o => o.input === "text");
-check("OMP: its own-answer row is typed in place: the arrows reach it, Ctrl+A Ctrl+K clear it, then the text and Enter",
-  JSON.stringify(typedAnswer(omp, oneField, own).before) === JSON.stringify(["down", "down", "ctrl+a", "ctrl+k"]));
-const ticks = ompRead("q2");
-check("OMP: a checkbox field ticks with Space and moves on with Next (Enter); its own answer stays in the terminal",
-  JSON.stringify([ticks.multi, ticks.options.map(o => [o.label, o.checked ?? null, keysFor(omp, ticks, ticks.options.indexOf(o))])]) === JSON.stringify([true, [["Cheese", true, ["space"]], ["Ham", false, ["down", "space"]], ["Olives", false, ["down", "down", "space"]], ["Next", null, ["enter"]]]]));
-check("OMP: a tick keeps it the same question", ompRead("q2-toggled").sig === ticks.sig && ompRead("q2-toggled").options[1].checked === true);
-const second = ompRead("q2-next");
-check("OMP: a form's later field says which it is, and picking in it doesn't send the form", JSON.stringify([second.question, ompKeys(second, "Large")]) === JSON.stringify([["Size (2 of 2)"], ["down", "enter"]]));
-const review = ompRead("q2-typed");
-check("OMP: on Submit, the answers are reviewed (a typed one included), and Send presses it",
-  JSON.stringify([review.review.answers, review.options.map(o => [o.label, o.keys])]) === JSON.stringify([[{ question: "Toppings", answer: "Cheese, Ham" }, { question: "Size", answer: "Huge" }], [["Send", ["enter"]], ["Change an answer", ["up"]]]]));
-check("OMP: an answered form is no question", ompRead("answered") === null);
-const plain = screen("omp-q1-down").replace(/\uF054/g, "❯").replace(/\uF192/g, "◉").replace(/\uF10C/g, "○");
-const ascii = screen("omp-q1-down").replace(/\uF054/g, ">").replace(/\uF192/g, "(o)").replace(/\uF10C/g, "( )");
-check("OMP: its unicode and ascii symbols read the same", [plain, ascii].every(s => parsePrompt(omp, s)?.sig === oneField.sig && ompKeys(parsePrompt(omp, s), "Cherry").join() === "down,enter,enter"));
-const typing = parsePrompt(omp, screen("omp-q2-next").replace("\uF054 \uF192 Small", "  \uF192 Small").replace("  \uF10C Other: type your own", "\uF054 \uF10C Other: Hu"));
-check("OMP: with the cursor in its own-answer row, what's typed so far shows", JSON.stringify(typing.options.at(-1)) === JSON.stringify({ n: 3, label: "Hu", desc: [], selected: true, input: "text", typed: "Hu", before: ["ctrl+a", "ctrl+k"], keys: ["ctrl+a", "ctrl+k", "enter"] }));
-const reedit = ompRead("q4-reedit");
-check("OMP: a typed answer edited again replaces it, and the card shows what it held",
-  JSON.stringify([reedit.options.at(-1).typed, typedAnswer(omp, reedit, reedit.options.length - 1).before]) === JSON.stringify(["Huge", ["ctrl+a", "ctrl+k"]]));
-const name = ompRead("q3");
-check("OMP: a text field is a text row holding its value, cleared before it's typed over",
-  JSON.stringify([name.question, name.multi, name.options.map(o => [o.input, o.typed, typedAnswer(omp, name, 0).before])]) === JSON.stringify([["Name (1 of 4)"], false, [["text", "Tom", ["ctrl+a", "ctrl+k"]]]]));
-check("OMP: an empty number field or textarea is an empty text row", ["q3-age", "q3-notes"].map(n => { const p = ompRead(n); return [p.question.at(-1), p.options[0].typed]; }).join("|") === "Age (3 of 4),|Notes (4 of 4),");
-const color = ompRead("q3-color");
-check("OMP: a select steps through its values with → and ←, and Enter keeps the one shown",
-  JSON.stringify([color.question, color.multi, color.options.map(o => [o.label, o.desc, keysFor(omp, color, color.options.indexOf(o))])]) ===
-  JSON.stringify([["Color (2 of 4)"], true, [["Red", ["1 of 3"], ["enter"]], ["Next choice", [], ["right"]], ["Previous choice", [], ["left"]]]]));
-check("OMP: stepping a select keeps it the same question", parsePrompt(omp, promptText(screen("omp-q3-color").replace("‹ Red ›  1/3", "‹ Green ›  2/3"))).sig === color.sig);
-check("OMP: the review shows each kind of field's answer", JSON.stringify(ompRead("q3-typed").review.answers) ===
-  JSON.stringify([{ question: "Name", answer: "Jan" }, { question: "Color", answer: "Green" }, { question: "Age", answer: "42" }, { question: "Notes", answer: "hello" }]));
 const wide = readFileSync(new URL("fixtures/prompts/omp-q3.txt", import.meta.url), "utf8");
+check("OMP's ask form isn't read off its screen (it comes from the session's log), though the screen still looks like a prompt",
+  parsePrompt(omp, promptText(wide)) === null && looksLikePrompt(promptText(wide)));
 check("a wide terminal's padding doesn't push a long form's top past the 4000 characters judged",
-  wide.trim().length > 4000 && parsePrompt(omp, wide.trim().slice(-4000))?.question.at(-1) !== "Name (1 of 4)" && promptText(wide).length <= 4000 && name.question.at(-1) === "Name (1 of 4)");
-const ompWrapped = parsePrompt(omp, ["╭─ Ask ─────", "│ What next?", "│ \uF054 \uF192 Switch the window to the Win98", "│     layout", "│   \uF10C Stay", "│", "│   Submit", "├──────", "│ \uF0311 choose · ↑/↓ move · \uF12B7 cancel", "╰──────"].join("\n"));
-check("OMP: a long choice wraps onto the next line", ompWrapped?.options[0].label === "Switch the window to the Win98 layout");
+  wide.trim().length > 4000 && !wide.trim().slice(-4000).includes("╭─ Ask ─") && promptText(wide).length <= 4000 && promptText(wide).includes("╭─ Ask ─"));
 const pictured = readFileSync(new URL("fixtures/prompts/omp-picture.txt", import.meta.url), "utf8");
-const picture = parsePrompt(omp, promptText(pictured));
 check("a picture's cells don't fill the characters judged: they read as one word a line", !/\u{10EEEE}/u.test(promptText(pictured)) && promptText(pictured).includes("[picture]"));
-check("OMP: a form with a picture reads whole, the picture as one line saying it's in the terminal",
-  JSON.stringify([picture.question.filter(l => l.startsWith("[A picture")).length, picture.question[1], picture.question.at(-1), picture.options.length]) ===
-  JSON.stringify([1, "[A picture: open the terminal to see it]", "Jak s ikonkami pro spaces?", 4]));
-const paged = parsePrompt(omp, promptText(screen("omp-q1-down").replace("╭─ Ask ", "╭─ Ask · 1/2 ")));
-check("OMP: a paged form's one field isn't sent with it, and the card says which page it is",
-  JSON.stringify([paged.question, ompKeys(paged, "Banana")]) === JSON.stringify([["Page 1 of 2", "Pick a fruit"], ["enter"]]));
-const untitled = parsePrompt(omp, ["│ Pick", "│ \uF054 \uF192 A", "│   \uF10C B", "│", "│   Submit", "├──────", "│ \uF0311 choose · ↑/↓ move", "╰──────"].join("\n"));
-check("OMP: nor is one whose title (and so its paging) is out of view", JSON.stringify([ompKeys(untitled, "A"), ompKeys(untitled, "B")]) === JSON.stringify([["enter"], ["down", "enter"]]));
-check("OMP: an answer emptied in the card is cleared in the field before it moves on",
-  JSON.stringify([keysFor(omp, name, 0), keysFor(omp, reedit, reedit.options.length - 1)]) === JSON.stringify([["ctrl+a", "ctrl+k", "enter"], ["ctrl+a", "ctrl+k", "enter"]]));
-const area = rows => parsePrompt(omp, ["╭─ Ask ──────", "│ \uF054 Notes │", ...rows.map(r => `│   │ ${r} │`), "│ │", "│   Submit │", "├──────", "│ \uF0311 next · ↑/↓ move │", "╰──────"].join("\n"));
-const filled = area(["line one", "line two", ""]);
-check("OMP: a textarea that holds text shows it and is only kept from the card, since a typed answer can't replace several lines",
-  JSON.stringify([filled.question, filled.options.map(o => [o.label, o.input ?? null, keysFor(omp, filled, 0)])]) === JSON.stringify([["line one", "line two", "Notes"], [["Keep it as it is", null, ["enter"]]]]));
-check("OMP: an empty textarea is typed into from the card", area(["", "", ""]).options[0].input === "text");
 
 process.exit(failed ? 1 : 0);

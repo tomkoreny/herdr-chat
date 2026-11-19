@@ -1,0 +1,32 @@
+
+                                       ████████████
+                                          ██  ██       ▄▀▀▄ █▀▄▀▄ █▀▀▄
+                                          ██  ██       ▀▄▄▀ █ █ █ █▄▄▀
+                                          ▒▒  ██                  █
+                                              ██       v19.0.0
+
+                    Tip: `/copy code` grabs the last code block to your clipboard — `/copy
+                                   cmd` grabs the last shell/python command
+
+
+ form:/tmp/ask-preview/cheese.html
+
+
+ Než budu pokračovat, potřebuji od tebe pár rozhodnutí.
+╭─ Ask · 1 of 2 answered ────────────────────────────────────────────────────────────────────────────────────╮
+│ Toppings                                                                                                   │
+│   Cheese                                                                                                 │
+│    Ham                                                                                                    │
+│    Olives                                                                                                 │
+│    Other: type your own                                                                                   │
+│                                                                                                            │
+│ ○ Size                                                                                                     │
+│    Small   Large                                                                                           │
+│                                                                                                            │
+│   Submit                                                                                                   │
+╰────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+
+
+  󱊷 Requesting decisions                                                                       Rozumím: <user>
+  4s   Fake   ask-preview/work ─0.0%─────────────────────────────────────────────────────󰁨─────────10M─
+╰─

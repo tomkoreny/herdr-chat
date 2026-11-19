@@ -103,6 +103,21 @@ export async function dropSent(names) {
   await Promise.all(names.map(n => unlink(`${sentDir()}/${n}`).catch(() => null)));
 }
 
+export function imageSize(bytes) {
+  // A PNG's, GIF's or JPEG's width and height in pixels, from its bytes; null for any other file.
+  const b = bytes, pair = at => (b[at] << 8) | b[at + 1];
+  if (b.length > 24 && b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e) return { width: pair(16) * 65536 + pair(18), height: pair(20) * 65536 + pair(22) };
+  if (b.length > 10 && b[0] === 0x47 && b[1] === 0x49 && b[2] === 0x46) return { width: b[6] | (b[7] << 8), height: b[8] | (b[9] << 8) };
+  if (b[0] !== 0xff || b[1] !== 0xd8) return null;
+  for (let at = 2; at + 8 < b.length; at += 2 + pair(at + 2)) {
+    if (b[at] !== 0xff) return null;
+    const marker = b[at + 1];
+    // A start-of-frame segment holds the size; C4, C8 and CC are tables in the same range.
+    if (marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc) return { width: pair(at + 7), height: pair(at + 5) };
+  }
+  return null;
+}
+
 export function attachName(source) {
   // A unique name for the preview copy, without its extension (the prepare script picks it).
   const base = source.split(/[\\/]/).pop().replace(/\.[^.]*$/, "").replace(/[^A-Za-z0-9_-]/g, "-").slice(-40) || "image";
