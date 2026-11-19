@@ -46,8 +46,10 @@ status bar) with the chat and the terminal sharing the work area.
     opening to each step with its output;
   - mermaid blocks drawn as diagrams in the reply;
   - pictures a reply shows (OMP's `<img src>`, markdown's `![alt](src)`) drawn in it, copied from
-    the agent's machine: a path is read from the session's folder, a `width` in pixels or percent
-    of the column is kept, and a web address stays a link (the chat opens no connections);
+    the agent's machine: a path is read from the session's folder, and only a regular PNG, JPEG,
+    GIF or WebP file of at most 20 MB is copied, checked there first (three at a time). A `width`
+    in pixels or percent of the column is kept, and a web address stays a link (the chat opens no
+    connections);
   - while the agent works, an accent spark and its live status; on OMP with its extension (see
     Install), what it is doing right now under it: "Thinking…" with the end of the thought,
     "Writing…" with the end of the reply, or the tool and its intent with the last lines of its

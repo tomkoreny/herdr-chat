@@ -56,6 +56,40 @@ else:
 `;
 const SHRINK_OVER = 250000;
 
+// A picture an agent shows is checked where it is, before a byte leaves its machine: a regular file (a link to one counts), at most
+// PICTURE_LIMIT bytes, starting as a PNG, JPEG, GIF or WebP does. Anything else (a device, a folder, a key, a log) is never copied, and
+// leaves nothing in the cache. The check runs in its own Python, there or here, bounded in time.
+const PICTURE_LIMIT = 20 * 1024 * 1024;
+const PICTURE_COPY = `
+import subprocess, sys
+machine, path, dest, limit = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
+CHECK = r'''
+import os, stat, sys
+path, limit = sys.argv[1], int(sys.argv[2])
+try:
+    st = os.stat(path)
+except OSError:
+    sys.exit(2)
+if not stat.S_ISREG(st.st_mode) or st.st_size > limit:
+    sys.exit(3)
+with open(path, "rb") as f:
+    data = f.read(limit + 1)
+head = data[:12]
+if len(data) > limit or not (head.startswith(b"\\x89PNG\\r\\n\\x1a\\n") or head.startswith(b"\\xff\\xd8\\xff") or head[:6] in (b"GIF87a", b"GIF89a") or (head[:4] == b"RIFF" and head[8:12] == b"WEBP")):
+    sys.exit(4)
+sys.stdout.buffer.write(data)
+'''
+run = ["hc", "exec", "--on", machine, "python3"] if machine else [sys.executable]
+try:
+    got = subprocess.run(run + ["-c", CHECK, path, limit], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=25)
+except Exception:
+    sys.exit(1)
+if got.returncode or not got.stdout:
+    sys.exit(1)
+open(dest, "wb").write(got.stdout)
+print(len(got.stdout))
+`;
+
 async function shrink(dir, name) {
   // A big image in `dir` through the reply box's prepare script, as <name>.jpg in place of it; the name kept, or null when it can't be shrunk here.
   const source = `${dir}/${name}`;
@@ -68,10 +102,11 @@ async function shrink(dir, name) {
   return null;
 }
 
-async function copyIn(dir, name, path, machine) {
-  // Copies the file at `path` on its machine (null: this one) into `dir` as `name`, shrunk when big; the file's name there, or null.
+async function copyIn(dir, name, path, machine, program = [FETCH]) {
+  // Copies the file at `path` on its machine (null: this one) into `dir` as `name` with `program` (FETCH, or PICTURE_COPY with its limit),
+  // shrunk when big; the file's name there, or null, leaving nothing behind.
   await mkdir(dir, { recursive: true }).catch(() => null);
-  const r = await python(["-c", FETCH, machine ?? "", path, `${dir}/${name}`]).catch(() => null);
+  const r = await python(["-c", program[0], machine ?? "", path, `${dir}/${name}`, ...program.slice(1)]).catch(() => null);
   if (!r || r.code !== 0) { await unlink(`${dir}/${name}`).catch(() => null); return null; }
   return Number(r.stdout) > SHRINK_OVER ? (await shrink(dir, name).catch(() => null)) ?? name : name;
 }
@@ -101,6 +136,10 @@ export function pictureName(path, machine, owner) {
 
 const PICTURES = new Map(), NOT_A_FILE = Object.freeze({ state: "none" });
 let pictureChanges = 0;
+// A session's history can show many pictures at once: at most this many are copied at a time.
+const COPYING_AT_ONCE = 3;
+let copying = 0;
+const waiting = [];
 
 export function pictureFor(src, cwd, machine, owner) {
   // A picture an agent shows, as the chat can draw it: { state: "none" } for one that isn't a file on the agent's machine; "fetching" the
@@ -119,14 +158,26 @@ export function pictureFor(src, cwd, machine, owner) {
 }
 
 async function loadPicture(p, name, path, machine) {
+  // A slot freed by one copy passes straight to the next waiting, so no more than COPYING_AT_ONCE ever run.
+  if (copying >= COPYING_AT_ONCE) await new Promise(go => waiting.push(go));
+  else copying++;
   try {
     const kept = (await readdir(pictureDir()).catch(() => [])).find(f => f === name || f === `${name}.jpg`);
-    const file = kept ?? await copyIn(pictureDir(), name, path, machine);
+    const file = kept ?? await copyIn(pictureDir(), name, path, machine, [PICTURE_COPY, String(PICTURE_LIMIT)]);
     const bytes = file ? await readFile(`${pictureDir()}/${file}`).catch(() => null) : null;
     const size = bytes ? imageSize(new Uint8Array(bytes)) : null;
-    Object.assign(p, size?.width && size.height ? { state: "ready", rel: `${PICTURE_DIR}/${file}`, ...size } : { state: "failed" });
+    if (size?.width && size.height) Object.assign(p, { state: "ready", rel: `${PICTURE_DIR}/${file}`, ...size });
+    else {
+      // A file the checks let through that still can't be measured goes too: nothing stays that isn't drawn.
+      if (file) await unlink(`${pictureDir()}/${file}`).catch(() => null);
+      p.state = "failed";
+    }
   } catch {
     p.state = "failed";
+  } finally {
+    const next = waiting.shift();
+    if (next) next();
+    else copying--;
   }
   pictureChanges++;
 }

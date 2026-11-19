@@ -1,4 +1,4 @@
-import { mkdirSync, rmdirSync, writeFileSync, readFileSync, readdirSync, existsSync, statSync, copyFileSync } from "fs";
+import { mkdirSync, rmdirSync, writeFileSync, readFileSync, readdirSync, existsSync, statSync, copyFileSync, symlinkSync, truncateSync } from "fs";
 import { spawnSync } from "child_process";
 import { join } from "path";
 import { stage } from "./stage.mjs";
@@ -123,6 +123,20 @@ check("a missing one fails, and nothing is left of it", [(await settled(() => li
   readdirSync(join(real.home, "cache", "herdr-chat", "pictures")).length], ["failed", 2]);
 check("a web picture isn't fetched", live.pictureFor("https://x.cz/a.png", away, null, "reply-1").state, "none");
 check("each arrival is counted, so the view redraws", live.picturesChanged() - before, 3);
+// Only a picture is ever copied: the checks run where the file is, so nothing else leaves its machine or reaches the cache.
+const pictures = join(real.home, "cache", "herdr-chat", "pictures");
+writeFileSync(join(away, "notes.png"), "secret = 1\n");
+writeFileSync(join(away, "huge.png"), shownBytes);
+truncateSync(join(away, "huge.png"), 21 * 1024 * 1024);
+mkdirSync(join(away, "folder.png"));
+symlinkSync(shownPng, join(away, "linked.png"));
+// The device is /dev/null: a broken check copying it ends at once, where /dev/zero would fill the disk.
+const refused = [];
+for (const [src, machine] of [["notes.png", null], ["notes.png", "box"], ["/dev/null", null], ["/dev/null", "box"], ["huge.png", null], ["huge.png", "box"], ["folder.png", null]])
+  refused.push((await settled(() => live.pictureFor(src, away, machine, "reply-2"))).state);
+check("a file that isn't a picture, a device, one over 20 MB or a folder is refused, here and on another machine", refused, new Array(7).fill("failed"));
+check("and leaves nothing in the cache", readdirSync(pictures).length, 2);
+check("a link to a picture is followed", (await settled(() => live.pictureFor("linked.png", away, null, "reply-2"))).state, "ready");
 real.cleanup();
 s.cleanup();
 process.exit(failed ? 1 : 0);
