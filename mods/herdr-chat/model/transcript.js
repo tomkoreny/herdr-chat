@@ -103,7 +103,9 @@ function digest(m) {
   // A row's content digest, computed once per row object.
   let d = DIGESTS.get(m);
   if (d === undefined) {
-    d = m.text != null ? hash(sample(m.text) + (m.images ?? []).join("|")) : hash((m.calls ?? []).map(callDigest).join("|"));
+    d = m.text != null ? hash(sample(m.text) + (m.images ?? []).join("|"))
+      : m.src != null ? hash(`${m.src}\n${m.owner ?? ""}`)
+      : hash((m.calls ?? []).map(callDigest).join("|"));
     DIGESTS.set(m, d);
   }
   return d;
@@ -135,6 +137,60 @@ export function splitCode(text) {
     if (i + 2 < parts.length) out.push({ kind: "code", lang: parts[i + 1]?.trim() || "", text: parts[i + 2].replace(/\n$/, "") });
   }
   return out;
+}
+
+const IMG_TAG = /<img\b((?:[^>"']|"[^"]*"|'[^']*')*)\/?>/gi;
+const MD_IMAGE = /!\[([^\]\n]*)\]\(\s*(<[^>\n]+>|[^)\s]+)(?:\s+(?:"[^"\n]*"|'[^'\n]*'))?\s*\)/g;
+const ENTITIES = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", "#39": "'" };
+
+function tagAttrs(inside) {
+  // An <img> tag's attributes by lower-case name, with their entities decoded.
+  const attrs = {};
+  for (const a of inside.matchAll(/([A-Za-z_:][-\w:.]*)\s*=\s*("([^"]*)"|'([^']*)'|([^\s"'>]+))/g))
+    attrs[a[1].toLowerCase()] = (a[3] ?? a[4] ?? a[5] ?? "").replace(/&(amp|lt|gt|quot|apos|#39);/g, (_m, e) => ENTITIES[e]);
+  return attrs;
+}
+
+export function splitPictures(text) {
+  // A reply (text without fenced code, see splitCode) split around the pictures it shows, as OMP writes them (<img src alt width>) or as
+  // markdown does (![alt](src)): text, a picture (with `end`, where it ends in `text`), text, … (null when it shows none). A picture in an
+  // inline code span is text.
+  const code = [...text.matchAll(/(`+)[\s\S]*?\1/g)].map(m => [m.index, m.index + m[0].length]);
+  const inCode = at => code.some(([a, b]) => at >= a && at < b);
+  const found = [];
+  for (const m of text.matchAll(IMG_TAG)) {
+    const a = tagAttrs(m[1]);
+    if (a.src && !inCode(m.index)) found.push({ at: m.index, end: m.index + m[0].length, src: a.src, alt: a.alt ?? "", width: a.width ?? "", height: a.height ?? "" });
+  }
+  for (const m of text.matchAll(MD_IMAGE)) {
+    if (inCode(m.index) || found.some(f => m.index < f.end && m.index + m[0].length > f.at)) continue;
+    found.push({ at: m.index, end: m.index + m[0].length, src: m[2].replace(/^<|>$/g, ""), alt: m[1], width: "", height: "" });
+  }
+  if (!found.length) return null;
+  found.sort((a, b) => a.at - b.at);
+  const out = [];
+  let from = 0;
+  for (const f of found) {
+    const before = text.slice(from, f.at).trim();
+    if (before) out.push({ kind: "text", text: before });
+    out.push({ kind: "picture", src: f.src, alt: f.alt, width: f.width, height: f.height, end: f.end });
+    from = f.end;
+  }
+  const after = text.slice(from).trim();
+  if (after) out.push({ kind: "text", text: after });
+  return out;
+}
+
+const PICTURE_MAX_HEIGHT = 560;
+
+export function pictureBox(natural, room, asked = {}) {
+  // The size (px) a reply's picture is drawn at: the width its tag asks for (a percentage of the column, or pixels), else the height it
+  // asks for, else its own size; never wider than the column (`room`) nor taller than PICTURE_MAX_HEIGHT, its proportions kept.
+  const ratio = natural.height / natural.width, number = /^\s*(\d+(?:\.\d+)?)\s*(px)?\s*$/;
+  const pct = /^\s*(\d+(?:\.\d+)?)\s*%\s*$/.exec(asked.width ?? ""), px = number.exec(asked.width ?? ""), tall = number.exec(asked.height ?? "");
+  let w = pct ? room * Number(pct[1]) / 100 : px ? Number(px[1]) : tall ? Number(tall[1]) / ratio : natural.width;
+  w = Math.min(w, room, PICTURE_MAX_HEIGHT / ratio);
+  return { width: Math.max(1, Math.round(w)), height: Math.max(1, Math.round(w * ratio)) };
 }
 
 export function withCopyRows(rows, working) {

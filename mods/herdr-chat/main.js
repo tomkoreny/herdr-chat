@@ -3,7 +3,9 @@ import { set_theme, v_flex, h_flex } from "gpui-base";
 import { panes, focused, props, hc, theme, shared, checking } from "herdr";
 import { switchTo, showView, preferredView, sessionOf, chatKey } from "./common.js";
 import { target, inputBox, interruptAgent } from "./terminal.js";
-import { keyRows, splitCode, withCopyRows, stepRows, stepText, withoutRetracted } from "./model/transcript.js";
+import { keyRows, splitCode, splitPictures, withCopyRows, stepRows, stepText, withoutRetracted } from "./model/transcript.js";
+import { hash } from "./model/hash.js";
+import { pictureFor, picturesChanged } from "./images.js";
 import { row } from "./ui/rows.js";
 import { hud } from "./ui/hud.js";
 import { COLUMN, programIcon, paneButtons, statusBadge, viewToggle, clock } from "./ui/primitives.js";
@@ -65,6 +67,7 @@ export default class HerdrChat extends View {
       this.noticeVisit();
       const cue = this.reader.readCue();
       if (cue !== this.shownCue) { this.shownCue = cue; cx.notify(); }
+      if (picturesChanged() !== this.picturesSeen) { this.picturesSeen = picturesChanged(); cx.notify(); }
       if (shared("herdr-chat.mode") !== "chat") return;
       if (hasQueuedDiagrams() && !this.drawingDiagram) {
         this.drawingDiagram = true;
@@ -227,6 +230,13 @@ export default class HerdrChat extends View {
       return pieces.flatMap(r => {
         const code = r.kind === "message" && r.role !== "user" && r.text?.includes("```") ? splitCode(r.text) : null;
         return code ? code.map(c => c.kind === "code" ? c : { ...r, text: c.text }) : [r];
+      }).flatMap(r => {
+        // A picture the reply shows, as a row of its own. Its `owner` is the reply up to the picture: written once, it stays the same as the
+        // reply goes on, and a later reply showing the same file gets a fresh copy of it.
+        const pics = r.kind === "message" && r.role !== "user" && /<img\b|!\[/i.test(r.text ?? "") ? splitPictures(r.text) : null;
+        if (!pics) return [r];
+        const base = Math.max(0, m.text.indexOf(r.text));
+        return pics.map(p => p.kind === "picture" ? { ...p, owner: hash(m.text.slice(0, base + p.end)) } : { ...r, text: p.text });
       });
     });
     if (this.note) rows.push({ kind: "note", text: this.note });
@@ -236,9 +246,9 @@ export default class HerdrChat extends View {
     const inner = Math.min(COLUMN, Math.max(280, Math.floor(this.width) - 50));
     const { body, measure } = this.list.render(cx, {
       rows, empty, t, inner, zoom: this.zoom, beforeScroll: () => this.noticeVisit(),
-      heightKey: m => `${m.key}${this.reader.session.open[m.key] ? ":open" : ""}${m.kind === "diagram" ? `:${diagramFor(m.text, t).state}` : ""}`,
-      waitsFor: m => m.kind === "diagram" && diagramFor(m.text, t).state === "queued",
-      row: m => row(m, { t, open: this.reader.session.open, width: this.width, sent: this.composer.sent, machine: target()?.machine, copied: this.copied }),
+      heightKey: m => `${m.key}${this.reader.session.open[m.key] ? ":open" : ""}${m.kind === "diagram" ? `:${diagramFor(m.text, t).state}` : ""}${m.kind === "picture" ? `:${pictureFor(m.src, active?.cwd, active?.machine, m.owner).state}` : ""}`,
+      waitsFor: m => (m.kind === "diagram" && diagramFor(m.text, t).state === "queued") || (m.kind === "picture" && pictureFor(m.src, active?.cwd, active?.machine, m.owner).state === "fetching"),
+      row: m => row(m, { t, open: this.reader.session.open, width: this.width, sent: this.composer.sent, machine: active?.machine, cwd: active?.cwd, copied: this.copied }),
       onItemClick: (key, cx) => {
         const row = rows.find(r => r.key === key);
         if (row?.kind === "code" || row?.kind === "copy") {

@@ -1,8 +1,8 @@
 import { div, image } from "gpui-kit";
 import { v_flex, h_flex, TextView } from "gpui-base";
 import { COLUMN, icon, mono, disclosure, bubble } from "./primitives.js";
-import { SENT_DIR, previewFile } from "../images.js";
-import { KINDS, STEP, summary, stepText } from "../model/transcript.js";
+import { SENT_DIR, previewFile, pictureFor } from "../images.js";
+import { KINDS, STEP, summary, stepText, pictureBox } from "../model/transcript.js";
 import { diagramFor } from "../diagrams.js";
 
 const TURN_GAP = 28;
@@ -106,12 +106,30 @@ function diagramRow(m, { t, width }) {
   return div().w_full().child(image(d.rel).w(w).h(h));
 }
 
+function pictureRow(m, { t, width, machine, cwd }) {
+  // A picture a reply shows, copied from the agent's machine (images.js): drawn once it has arrived, a line saying so until then; a web
+  // address as a link, as the chat opens no connections of its own.
+  const p = pictureFor(m.src, cwd, machine, m.owner), label = m.alt || m.src.split(/[\\/]/).pop() || "Picture";
+  const line = (glyph, text) => h_flex().h(28).px(10).gap(6).items_center().rounded(8).bg(t.surface).text_size(12.5).text_color(t.muted)
+    .child(icon(glyph, 14, t.muted)).child(div().min_w(0).truncate().child(text));
+  if (p.state === "ready") {
+    const room = Math.min(COLUMN, Math.max(280, Math.floor(width) - 50));
+    const size = pictureBox(p, room, m);
+    return div().w_full().child(div().id(`pic-${m.key}`).w(size.width).h(size.height).rounded(10).overflow_hidden().border_1().border_color(t.border)
+      .tooltip(m.alt || m.src).child(image(p.rel).size_full()));
+  }
+  if (p.state === "fetching") return div().w_full().child(line("image", `${label} · loading`));
+  if (/^https?:/i.test(m.src)) return div().w_full().text_size(15).child(TextView.markdown(`pic-${m.key}`, `[${label.replace(/[[\]]/g, "")}](${m.src})`));
+  return div().w_full().child(line("image", `${label} · ${p.state === "failed" ? "couldn't be copied from the agent's machine" : "not shown here"}`));
+}
+
 export function row(m, ctx) {
-  // One conversation row, drawn from the row alone and `ctx` ({ t, open, width, sent, machine }), with the gap that starts a turn.
+  // One conversation row, drawn from the row alone and `ctx` ({ t, open, width, sent, machine, cwd }), with the gap that starts a turn.
   const body = m.kind === "tools" ? toolsRow(m, ctx)
     : m.kind === "step" ? stepRow(m, ctx)
     : m.kind === "note" ? div().w_full().text_size(12.5).text_color(ctx.t.dim).child(m.text)
     : m.kind === "diagram" ? diagramRow(m, ctx)
+    : m.kind === "picture" ? pictureRow(m, ctx)
     : m.kind === "code" ? codeRow(m, ctx)
     : m.kind === "copy" ? copyRow(m, ctx)
     : messageRow(m, ctx);

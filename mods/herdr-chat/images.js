@@ -1,12 +1,16 @@
 import { appHome, exec } from "herdr";
 import { mkdir, readdir, readFile, writeFile, unlink } from "fs/promises";
 import { onWindows, python, modFile } from "./platform.js";
+import { hash } from "./model/hash.js";
 
 export const IMAGE_FILE = /\.(png|jpe?g|gif|webp)$/i;
 export const ATTACH_DIR = "cache/herdr-chat";
 export function attachDir() { return onWindows() ? `${appHome()}\\cache\\herdr-chat` : `${appHome()}/${ATTACH_DIR}`; }
 export const SENT_DIR = `${ATTACH_DIR}/sent`;
 function sentDir() { return onWindows() ? `${attachDir()}\\sent` : `${appHome()}/${SENT_DIR}`; }
+// Pictures an agent shows, in its replies and its ask forms, copied from its machine; pruned with the rest of the cache after a day.
+export const PICTURE_DIR = `${ATTACH_DIR}/pictures`;
+function pictureDir() { return onWindows() ? `${attachDir()}\\pictures` : `${appHome()}/${PICTURE_DIR}`; }
 
 function cleanPart(s) { return String(s ?? "").replace(/[^A-Za-z0-9_-]/g, "-"); }
 
@@ -52,25 +56,84 @@ else:
 `;
 const SHRINK_OVER = 250000;
 
-async function shrink(name) {
-  // A big preview in sent/ through the reply box's prepare script, as <name>.jpg in place of it; the name kept, or null when it can't be shrunk here.
-  const source = `${sentDir()}/${name}`;
+async function shrink(dir, name) {
+  // A big image in `dir` through the reply box's prepare script, as <name>.jpg in place of it; the name kept, or null when it can't be shrunk here.
+  const source = `${dir}/${name}`;
   const r = await (onWindows()
-    ? exec("powershell.exe", ["-NoProfile", "-NonInteractive", "-STA", "-ExecutionPolicy", "Bypass", "-File", modFile("prepare-image.ps1"), "-Source", source, "-Folder", sentDir(), "-Name", name])
-    : exec("sh", [modFile("prepare-image.sh"), source, sentDir(), name])).catch(() => null);
+    ? exec("powershell.exe", ["-NoProfile", "-NonInteractive", "-STA", "-ExecutionPolicy", "Bypass", "-File", modFile("prepare-image.ps1"), "-Source", source, "-Folder", dir, "-Name", name])
+    : exec("sh", [modFile("prepare-image.sh"), source, dir, name])).catch(() => null);
   const made = (r?.stdout ?? "").trim().split(/\r?\n/).pop().split(/[\\/]/).pop();
   if (r?.code === 0 && made === `${name}.jpg`) { await unlink(source).catch(() => null); return made; }
-  if (made && made !== name) await unlink(`${sentDir()}/${made}`).catch(() => null);
+  if (made && made !== name) await unlink(`${dir}/${made}`).catch(() => null);
   return null;
+}
+
+async function copyIn(dir, name, path, machine) {
+  // Copies the file at `path` on its machine (null: this one) into `dir` as `name`, shrunk when big; the file's name there, or null.
+  await mkdir(dir, { recursive: true }).catch(() => null);
+  const r = await python(["-c", FETCH, machine ?? "", path, `${dir}/${name}`]).catch(() => null);
+  if (!r || r.code !== 0) { await unlink(`${dir}/${name}`).catch(() => null); return null; }
+  return Number(r.stdout) > SHRINK_OVER ? (await shrink(dir, name).catch(() => null)) ?? name : name;
 }
 
 export async function fetchSent(path, machine) {
   // Copies an image herdr placed beside a terminal, on its machine (null: this one), into sent/, shrunk when big; the file's name there, or null.
-  await mkdir(sentDir(), { recursive: true }).catch(() => null);
-  const name = previewName(path, machine);
-  const r = await python(["-c", FETCH, machine ?? "", path, `${sentDir()}/${name}`]).catch(() => null);
-  if (!r || r.code !== 0) { await unlink(`${sentDir()}/${name}`).catch(() => null); return null; }
-  return Number(r.stdout) > SHRINK_OVER ? (await shrink(name).catch(() => null)) ?? name : name;
+  return copyIn(sentDir(), previewName(path, machine), path, machine);
+}
+
+export function picturePath(src, cwd) {
+  // Where a picture an agent shows (an <img> or ![]() source) is on its machine: its path, from the session's folder when relative; null
+  // for one that isn't a file there (a web address, inline data).
+  if (/^(https?|data):/i.test(src)) return null;
+  let path = src.replace(/^file:\/\//i, "");
+  try { if (path !== src) path = decodeURIComponent(path); } catch {}
+  if (/^(\/|[A-Za-z]:[\\/]|\\\\)/.test(path)) return path;
+  return cwd ? `${cwd.replace(/[\\/]+$/, "")}/${path.replace(/^\.\//, "")}` : null;
+}
+
+export function pictureName(path, machine, owner) {
+  // A picture's file name in pictures/: its machine, a digest of its path and of what shows it (`owner`: the reply or the ask), and its own
+  // name. A path shown again by a later reply is copied again, as the file there may have changed since.
+  const file = path.split(/[\\/]/).pop(), dot = file.lastIndexOf(".");
+  const stem = dot > 0 ? file.slice(0, dot) : file, ext = dot > 0 ? file.slice(dot + 1).replace(/[^A-Za-z0-9]/g, "") : "";
+  return `${cleanPart(machine) || "local"}~${hash(`${path}\n${owner}`)}~${cleanPart(stem).slice(-40)}${ext ? `.${ext}` : ""}`;
+}
+
+const PICTURES = new Map(), NOT_A_FILE = Object.freeze({ state: "none" });
+let pictureChanges = 0;
+
+export function pictureFor(src, cwd, machine, owner) {
+  // A picture an agent shows, as the chat can draw it: { state: "none" } for one that isn't a file on the agent's machine; "fetching" the
+  // first time it's asked for, while it's copied into pictures/ (kept there from an earlier run when it still is) and measured; then
+  // "ready" with `rel` (for image()), `width` and `height`, or "failed". picturesChanged() tells when one has arrived.
+  const path = picturePath(String(src ?? ""), cwd);
+  if (!path) return NOT_A_FILE;
+  const name = pictureName(path, machine, owner);
+  let p = PICTURES.get(name);
+  if (!p) {
+    p = { state: "fetching" };
+    PICTURES.set(name, p);
+    loadPicture(p, name, path, machine);
+  }
+  return p;
+}
+
+async function loadPicture(p, name, path, machine) {
+  try {
+    const kept = (await readdir(pictureDir()).catch(() => [])).find(f => f === name || f === `${name}.jpg`);
+    const file = kept ?? await copyIn(pictureDir(), name, path, machine);
+    const bytes = file ? await readFile(`${pictureDir()}/${file}`).catch(() => null) : null;
+    const size = bytes ? imageSize(new Uint8Array(bytes)) : null;
+    Object.assign(p, size?.width && size.height ? { state: "ready", rel: `${PICTURE_DIR}/${file}`, ...size } : { state: "failed" });
+  } catch {
+    p.state = "failed";
+  }
+  pictureChanges++;
+}
+
+export function picturesChanged() {
+  // A count that goes up each time a picture has arrived or failed: a view drawing pictures redraws when it moves.
+  return pictureChanges;
 }
 
 export function previewFile(sent, path, machine) {
@@ -104,8 +167,15 @@ export async function dropSent(names) {
 }
 
 export function imageSize(bytes) {
-  // A PNG's, GIF's or JPEG's width and height in pixels, from its bytes; null for any other file.
-  const b = bytes, pair = at => (b[at] << 8) | b[at + 1];
+  // A PNG's, GIF's, JPEG's or WebP's width and height in pixels, from its bytes; null for any other file.
+  const b = bytes, pair = at => (b[at] << 8) | b[at + 1], low = (at, n) => { let v = 0; for (let i = n - 1; i >= 0; i--) v = v * 256 + b[at + i]; return v; };
+  if (b.length > 30 && String.fromCharCode(...b.slice(0, 4)) === "RIFF" && String.fromCharCode(...b.slice(8, 12)) === "WEBP") {
+    const kind = String.fromCharCode(...b.slice(12, 16));
+    if (kind === "VP8X") return { width: low(24, 3) + 1, height: low(27, 3) + 1 };
+    if (kind === "VP8L") { const v = low(21, 4); return { width: (v & 0x3fff) + 1, height: ((v >> 14) & 0x3fff) + 1 }; }
+    if (kind === "VP8 ") return { width: low(26, 2) & 0x3fff, height: low(28, 2) & 0x3fff };
+    return null;
+  }
   if (b.length > 24 && b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e) return { width: pair(16) * 65536 + pair(18), height: pair(20) * 65536 + pair(22) };
   if (b.length > 10 && b[0] === 0x47 && b[1] === 0x49 && b[2] === 0x46) return { width: b[6] | (b[7] << 8), height: b[8] | (b[9] << 8) };
   if (b[0] !== 0xff || b[1] !== 0xd8) return null;

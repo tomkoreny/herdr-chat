@@ -45,6 +45,9 @@ status bar) with the chat and the terminal sharing the work area.
   - tools and thinking folded into one grey line per run ("Ran 3 commands, read 2 files ›"),
     opening to each step with its output;
   - mermaid blocks drawn as diagrams in the reply;
+  - pictures a reply shows (OMP's `<img src>`, markdown's `![alt](src)`) drawn in it, copied from
+    the agent's machine: a path is read from the session's folder, a `width` in pixels or percent
+    of the column is kept, and a web address stays a link (the chat opens no connections);
   - while the agent works, an accent spark and its live status; on OMP with its extension (see
     Install), what it is doing right now under it: "Thinking…" with the end of the thought,
     "Writing…" with the end of the reply, or the tool and its intent with the last lines of its
@@ -154,7 +157,7 @@ the terminal itself belongs to the layout. The same mod runs twice: as the chat
 | `harnesses/` | one adapter per agent: label, image style, drafts, prompt options, input box, skills, reader. All agent-specific behaviour lives here |
 | `readers/` | the session reader in Python 3.6+, one file per agent beside `common.py` and `main.py`, joined in `manifest.json` order |
 | `terminal.js`, `platform.js` | the target agent and its screen; Windows and Unix differences |
-| `images.js`, `prepare-image.sh` / `.ps1` | image previews: where they go, shrinking, the clipboard |
+| `images.js`, `prepare-image.sh` / `.ps1` | image previews: where they go, shrinking, the clipboard; pictures an agent shows in its replies and ask forms, copied into `cache/herdr-chat/pictures/` |
 | `input-box.py`, `send.ps1` | the agent's own input box, and keys typed as a terminal sends them, through `hc attach` (Linux and macOS); sending on Windows |
 | `diagrams.js`, `vendor/pele/` | mermaid through [Pele](https://github.com/obsidianmd/pele), pinned in `package.json` and copied into `vendor/` |
 | `icons/` | the mod's SVG icons |
@@ -196,8 +199,10 @@ agent is doing right now in `<session>/__live.json` beside its log (see Adding a
   `/proc` or `ps` elsewhere. Python on Windows ends lines with `\r\n`, so split batch output on
   either.
 - **Binary files:** read a written image back to confirm its size before using it.
-- **Thumbnails:** `image()` draws files inside the herdr home, so each preview is a copy in
-  `cache/herdr-chat/sent/`.
+- **Thumbnails and pictures:** `image()` draws files inside the herdr home, so each preview is a
+  copy in `cache/herdr-chat/sent/`, and each picture an agent shows one in
+  `cache/herdr-chat/pictures/`. gpui's markdown view draws no images, not even from a file or
+  a web address, so a reply is split around its pictures and each is drawn as a row of its own.
 - **Diagrams:** write the theme's colours into Pele's SVG directly; herdr's SVG renderer draws
   inline colours.
 - **List rows:** handle clicks with the virtual list's `on_item_click`.
@@ -266,6 +271,7 @@ agent is doing right now in `<session>/__live.json` beside its log (see Adding a
 - An OMP ask form shows whole in the card, and Submit there submits it in the terminal with the
   answers the card shows (OMP 18.22 or 19).
 - A mermaid block shows as a diagram in the theme's colours.
+- A picture in an agent's reply shows in it, from this machine or another.
 - On OMP, `/` lists its commands, `/effort ` offers its levels, and picking a model in the status
   line switches the session's model, which the line shows once OMP has logged it.
 - Changing the theme changes the chat's colours.

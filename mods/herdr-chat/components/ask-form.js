@@ -1,11 +1,9 @@
 import { div, image } from "gpui-kit";
 import { v_flex, h_flex, Input, InputState, Textarea, TextareaState, TextView } from "gpui-base";
-import { appHome } from "herdr";
-import { readFile } from "fs/promises";
 import { switchTo, sessionOf } from "../common.js";
 import { onWindows } from "../platform.js";
 import { target, readScreen, pressKeys, inputBox } from "../terminal.js";
-import { SENT_DIR, fetchSent, imageSize } from "../images.js";
+import { pictureFor } from "../images.js";
 import { designPx } from "../measure.js";
 import { askForm, plain } from "../model/ask-html.js";
 import { blankAnswers, reachable, fieldError, otherCounts, formProgram, checkKeys, askState } from "../model/ask-form.js";
@@ -26,14 +24,6 @@ function spansHtml(spans) {
 function rich(id, spans) {
   // A label or a paragraph: plain text, or a TextView when it has code, emphasis or line breaks.
   return spans.some(s => s.s || s.t.includes("\n")) ? TextView.html(id, spansHtml(spans)).selectable(true) : div().child(plain(spans));
-}
-
-function picturePath(src, cwd) {
-  // Where a form's <img> is on the agent's machine: its path (from the session's folder when relative); null for a picture that isn't a file there.
-  if (/^(https?|data):/i.test(src)) return null;
-  let path = src.replace(/^file:\/\//i, "");
-  try { if (path !== src) path = decodeURIComponent(path); } catch {}
-  return path.startsWith("/") ? path : cwd ? `${cwd}/${path}` : null;
 }
 
 function question(form) {
@@ -110,9 +100,9 @@ export class AskForm {
   }
 
   open(cx, t, id, form) {
-    // A form's sheet: its answers as the form opens with them, a text box per text field and per Other row, and its pictures on their way.
+    // A form's sheet: its answers as the form opens with them, a text box per text field and per Other row, and where its pictures are.
     const fields = form.fields;
-    const s = { id, form, answers: blankAnswers(form), reach: reachable(form), errors: fields.map(() => ""), note: "", pictures: new Map(), texts: [], others: [] };
+    const s = { id, form, cwd: t.cwd, machine: t.machine, answers: blankAnswers(form), reach: reachable(form), errors: fields.map(() => ""), note: "", texts: [], others: [] };
     // One question with one answer to pick: picking it sends it.
     s.lone = fields.length === 1 && fields[0].kind === "choice" && !fields[0].multi && !fields[0].select;
     fields.forEach((f, i) => {
@@ -131,18 +121,6 @@ export class AskForm {
       const [old, gone] = this.sheets.entries().next().value;
       this.sheets.delete(old);
       for (const box of [...gone.texts, ...gone.others]) box?.release();
-    }
-    for (const section of form.sections) for (const b of section.blocks) {
-      const path = b.kind === "image" && !s.pictures.has(b.src) ? picturePath(b.src, t.cwd) : null;
-      if (!path) continue;
-      s.pictures.set(b.src, null);
-      cx.spawn(async cx => {
-        // The picture copied from the agent's machine into the chat's cache, where the app can draw it, and measured there.
-        const file = await fetchSent(path, t.machine).catch(() => null);
-        const bytes = file ? await readFile(`${appHome()}/${SENT_DIR}/${file}`).catch(() => null) : null;
-        const size = bytes ? imageSize(bytes) : null;
-        if (size?.width && size.height) { s.pictures.set(b.src, { rel: `${SENT_DIR}/${file}`, ...size }); cx.notify(); }
-      });
     }
   }
 
@@ -297,16 +275,18 @@ export class AskForm {
         .when(r < b.headerRows, el => el.bg(t.background))
         .children(cells.map((cell, c) => rich(`ask-c${key}-${r}-${c}`, cell).flex_1().min_w(0).text_size(12.5)
           .text_color(r < b.headerRows ? t.foreground : t.muted).when(r < b.headerRows, el => el.font_semibold())))));
-    const shown = b.kind === "image" ? s.pictures.get(b.src) : null;
-    if (shown) {
+    // A picture is copied from the agent's machine the first time the card draws it (images.js); the view redraws once it has arrived.
+    const shown = b.kind === "image" ? pictureFor(b.src, s.cwd, s.machine, s.id) : null;
+    if (shown?.state === "ready") {
       const width = Math.min(COLUMN, Math.floor(this.host.width ?? COLUMN) - 48) - 30;
       const scale = Math.min(1, width / shown.width, PICTURE_HEIGHT / shown.height);
       return div().id(`ask-m${key}`).flex_none().w(Math.round(shown.width * scale)).h(Math.round(shown.height * scale)).rounded(8).overflow_hidden()
         .border_1().border_color(t.border).tooltip(b.alt || b.src).child(image(shown.rel).size_full());
     }
+    const where = shown?.state === "fetching" ? "loading" : "shown in the terminal";
     return h_flex().h(28).px(10).gap(6).flex_none().items_center().rounded(8).bg(t.background).text_size(12).text_color(t.muted)
       .child(icon("image", 14, t.muted))
-      .child(div().flex_1().min_w(0).truncate().child(`${b.alt || (b.kind === "image" ? b.src.split("/").pop() : "Drawing")} · shown in the terminal`));
+      .child(div().flex_1().min_w(0).truncate().child(`${b.alt || (b.kind === "image" ? b.src.split("/").pop() : "Drawing")} · ${where}`));
   }
 
   field(t, s, i) {

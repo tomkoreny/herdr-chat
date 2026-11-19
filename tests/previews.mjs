@@ -4,7 +4,7 @@ import { join } from "path";
 import { stage } from "./stage.mjs";
 
 const s = stage();
-const { previewName, previewFile, keepSent, sentNames, staleSent, dropSent, imageSize } = await s.load("images.js");
+const { previewName, previewFile, keepSent, sentNames, staleSent, dropSent, imageSize, picturePath, pictureName } = await s.load("images.js");
 let failed = 0;
 const check = (name, got, want) => {
   const ok = JSON.stringify(got) === JSON.stringify(want);
@@ -18,8 +18,23 @@ const jpeg = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0, 4, 1, 2, 0xff, 0xc4, 0, 
 check("a picture's size is read from its PNG, GIF or JPEG header, and no size from anything else",
   [imageSize(png), imageSize(gif), imageSize(jpeg), imageSize(new Uint8Array([60, 115, 118, 103, 62])), imageSize(new Uint8Array([0xff, 0xd8, 0xff]))],
   [{ width: 1200, height: 1150 }, { width: 320, height: 240 }, { width: 800, height: 600 }, null, null]);
-const placed = (t, name) => `/home/a/.local/state/herdr-core/default/files/${t}/${name}`;
+// WebP: an extended (VP8X) one 1201×901, a lossless (VP8L) one 320×240, a lossy (VP8 ) one 640×480.
+const riff = (kind, rest) => new Uint8Array([82, 73, 70, 70, 0, 0, 0, 0, 87, 69, 66, 80, ...[...kind].map(c => c.charCodeAt(0)), 0, 0, 0, 0, ...rest, ...new Array(16).fill(0)]);
+const lossless = ((320 - 1) | ((240 - 1) << 14)) >>> 0;
+check("and from a WebP's, of each kind",
+  [imageSize(riff("VP8X", [0, 0, 0, 0, 0xb0, 0x04, 0x00, 0x84, 0x03, 0x00])), imageSize(riff("VP8L", [0x2f, lossless & 255, (lossless >> 8) & 255, (lossless >> 16) & 255, lossless >>> 24])),
+    imageSize(riff("VP8 ", [0, 0, 0, 0x9d, 0x01, 0x2a, 0x80, 0x02, 0xe0, 0x01]))],
+  [{ width: 1201, height: 901 }, { width: 320, height: 240 }, { width: 640, height: 480 }]);
+check("a picture an agent shows is found from its session's folder, or where its path says; a web or inline one isn't a file",
+  [picturePath("shots/a.png", "/home/tom/nixos2"), picturePath("./a.png", "/w/"), picturePath("../../tmp/b.png", "/home/tom/nixos2"), picturePath("/tmp/c.png", "/w"),
+    picturePath("file:///tmp/my%20d.png", "/w"), picturePath(String.raw`C:\shots\e.png`, "/w"), picturePath("https://x.cz/f.png", "/w"), picturePath("data:image/png;base64,AA", "/w"), picturePath("g.png", "")],
+  ["/home/tom/nixos2/shots/a.png", "/w/a.png", "/home/tom/nixos2/../../tmp/b.png", "/tmp/c.png", "/tmp/my d.png", String.raw`C:\shots\e.png`, null, null, null]);
+check("a picture's copy is named for its machine, its path and what showed it, keeping its own name and type",
+  [pictureName("/tmp/shots/01 form.png", "box", "r1").replace(/~\w+~/, "~#~"), pictureName("/tmp/a.png", null, "r1") === pictureName("/tmp/a.png", null, "r2"),
+    pictureName("/tmp/a.png", null, "r1") === pictureName("/tmp/b/a.png", null, "r1"), pictureName("/tmp/a.png", null, "r1") === pictureName("/tmp/a.png", "box", "r1")],
+  ["box~#~01-form.png", false, false, false]);
 
+const placed = (t, name) => `/home/a/.local/state/herdr-core/default/files/${t}/${name}`;
 check("a preview name says where the image was placed", previewName(placed("t4k", "same.png")), "local~t4k~same.png");
 check("the same name in two terminals stays apart", previewName(placed("t4k", "same.png")) === previewName(placed("t4s", "same.png")), false);
 check("the same terminal on two machines stays apart", previewName(placed("t7", "same.png"), "server") === previewName(placed("t7", "same.png")), false);
@@ -92,6 +107,22 @@ if (hasMagick) {
   check("no working copies stay behind", readdirSync(join(real.home, "cache", "herdr-chat")).sort(), ["sent"]);
   check("the bubble finds it", live.previewFile(new Set(await live.sentNames()), big, null), "local~t7~big.png.jpg");
 }
+// A picture a reply shows: fetching while it's copied, then ready with its size, from this machine or another; a missing one fails.
+const shownPng = join(away, "shown.png"), shownBytes = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 3, 0, 0, 0, 2, 8, 6, 0, 0, 0]);
+writeFileSync(shownPng, shownBytes);
+const settled = async get => { for (let i = 0; i < 100 && get().state === "fetching"; i++) await new Promise(r => setTimeout(r, 30)); return get(); };
+const before = live.picturesChanged();
+const here = live.pictureFor("shown.png", away, null, "reply-1");
+check("a picture starts out on its way", here.state, "fetching");
+const hereDone = await settled(() => live.pictureFor("shown.png", away, null, "reply-1"));
+check("then it's in pictures/, measured", [hereDone.state, hereDone.width, hereDone.height, hereDone.rel.startsWith("cache/herdr-chat/pictures/local~")], ["ready", 3, 2, true]);
+check("byte for byte", [...readFileSync(join(real.home, hereDone.rel))], [...shownBytes]);
+const boxDone = await settled(() => live.pictureFor(shownPng, "/elsewhere", "box", "reply-1"));
+check("one on another machine comes through hc exec", [boxDone.state, boxDone.rel.includes("/box~")], ["ready", true]);
+check("a missing one fails, and nothing is left of it", [(await settled(() => live.pictureFor("gone.png", away, null, "reply-1"))).state,
+  readdirSync(join(real.home, "cache", "herdr-chat", "pictures")).length], ["failed", 2]);
+check("a web picture isn't fetched", live.pictureFor("https://x.cz/a.png", away, null, "reply-1").state, "none");
+check("each arrival is counted, so the view redraws", live.picturesChanged() - before, 3);
 real.cleanup();
 s.cleanup();
 process.exit(failed ? 1 : 0);
